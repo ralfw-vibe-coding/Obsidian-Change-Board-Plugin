@@ -1,7 +1,7 @@
 # Change Board
 
 Ein Obsidian-Plugin, das Veränderungsaufgaben als Notizen führt und sie als Backlog
-und Kanban-Board anzeigt. Vorlage ist `requirements/changeboard.html`.
+und Kanban-Board anzeigt.
 
 ## Idee
 
@@ -59,6 +59,16 @@ Der Body ist in H2-Abschnitte gegliedert, die das Detailfeld füllen:
 `Worum es geht`, `Wenn`, `Im Weg steht`, `Woran wir es gesehen haben`,
 `Warum das so ist`, `Merksatz`, `Richtungen`, `Aufgelöst, wenn`.
 
+## Installation
+
+Über [BRAT](https://github.com/TfTHacker/obsidian42-brat): in BRAT
+*Add beta plugin* wählen und dieses Repository angeben. BRAT holt sich
+`main.js`, `manifest.json` und `styles.css` aus dem jeweils neuesten Release
+und hält das Plugin aktuell.
+
+Von Hand geht es genauso: die drei Dateien aus einem Release nach
+`<vault>/.obsidian/plugins/change-board/` legen und Obsidian neu laden.
+
 ## Benutzung
 
 Ribbon-Symbol oder Befehl „Change Board öffnen". Ordner, Board-Titel und Tagesfokus
@@ -78,28 +88,38 @@ Kein Build, keine Abhängigkeiten: `main.js` ist der Quellcode und wird von Obsi
 direkt geladen. Nach einer Änderung genügt in Obsidian „Plugin neu laden" (oder
 Fenster neu laden mit `Cmd+R`).
 
-Einbindung ins Test-Vault:
+Zum Entwickeln das Repo als Plugin in ein Vault hängen:
 
 ```bash
-ln -sfn "$PWD" "../Change Board Test Vault/.obsidian/plugins/change-board"
+ln -sfn "$PWD" "<pfad zum vault>/.obsidian/plugins/change-board"
 ```
-
-### Notizen erzeugen
-
-Der Bestand im Test-Vault wurde einmalig aus einer HTML-Vorlage erzeugt. Das
-Werkzeug dafür liegt bei der Vorlage in `requirements/generator/`, nicht hier —
-es wird für den Betrieb des Plugins nicht gebraucht.
 
 ### Prüfen
 
 ```bash
-node tools/test/smoke.js
+node tools/test/smoke.js [pfad zum vault]
 ```
 
-Rendert die Ansicht gegen das Test-Vault und prüft Anmeldung bei Obsidian,
+Rendert die Ansicht gegen ein Vault mit Board-Notizen und prüft Anmeldung bei Obsidian,
 Struktur, Leitstern-Detail, Filter, Statuswechsel, Board, Zoom und die Rotation
 des Tagesfokus. Dafür gibt es unter `tools/test/` ein kleines DOM und einen
 Obsidian-Ersatz — beides ohne fremde Pakete, damit das Repo abhängigkeitsfrei bleibt.
+
+## Veröffentlichen
+
+Ein Release entsteht durch einen Tag; alles Weitere erledigt
+`.github/workflows/release.yml` auf GitHub:
+
+```bash
+git tag 0.1.0
+git push origin 0.1.0
+```
+
+Der Tag muss **genau der Version in `manifest.json` entsprechen** und ohne `v`
+davor stehen — danach sucht BRAT das Release. Weicht er ab, bricht der Workflow
+mit einer entsprechenden Meldung ab, statt ein Release zu erzeugen, das niemand
+findet. Vor dem Taggen also die Version in `manifest.json` erhöhen, committen,
+und erst den Commit taggen, der auch den Workflow enthält.
 
 ## Dateien
 
@@ -109,3 +129,4 @@ Obsidian-Ersatz — beides ohne fremde Pakete, damit das Repo abhängigkeitsfrei
 | `styles.css`                | das Aussehen                                       |
 | `manifest.json`             | Kenndaten für Obsidian                             |
 | `tools/test/`               | Rauchtest, Mini-DOM, Obsidian-Ersatz                |
+| `.github/workflows/`        | veröffentlicht Releases beim Schieben eines Tags    |

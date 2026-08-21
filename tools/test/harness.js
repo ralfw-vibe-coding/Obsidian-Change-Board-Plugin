@@ -5,10 +5,16 @@
 const Module = require("node:module");
 const { join } = require("node:path");
 const { neuesDokument, Ereignis } = require("./mini-dom");
+const { existsSync } = require("node:fs");
 const { vaultLaden } = require("./vault-stub");
 
 const repo = join(__dirname, "..", "..");
-const vaultPfad = join(repo, "..", "Change Board Test Vault");
+// Voreinstellung ist das Test-Vault neben dem Repo; per Argument oder
+// CHANGE_BOARD_VAULT lässt sich ein anderes angeben.
+const vaultPfad =
+  process.argv.find((a) => !a.startsWith("-") && a.includes("Vault")) ||
+  process.env.CHANGE_BOARD_VAULT ||
+  join(repo, "..", "Change Board Test Vault");
 
 // require("obsidian") auf den Stub umbiegen, bevor main.js geladen wird.
 const stub = require.resolve("./obsidian-stub");
@@ -21,6 +27,12 @@ Module._resolveFilename = function (anfrage, ...rest) {
 const ChangeBoardPlugin = require(join(repo, "main.js"));
 
 async function boardAufbauen() {
+  if (!existsSync(vaultPfad)) {
+    throw new Error(
+      `Kein Vault unter ${vaultPfad}.\n` +
+        "Pfad als Argument übergeben oder in CHANGE_BOARD_VAULT setzen."
+    );
+  }
   const { vault, metadataCache, fileManager, geschrieben } = vaultLaden(vaultPfad);
   const geoeffnet = [];
   const blaetter = [];

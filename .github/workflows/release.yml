@@ -1,0 +1,57 @@
+# Veröffentlicht ein GitHub-Release, sobald ein Tag geschoben wird.
+#
+# BRAT sucht das Release anhand der Version aus manifest.json — der Tag muss also
+# genau so heißen wie diese Version, ohne "v" davor:
+#
+#   git tag 0.1.0 && git push origin 0.1.0
+#
+# Der Tag muss auf einen Commit zeigen, der diesen Workflow bereits enthält.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Tag gegen manifest.json prüfen
+        run: |
+          VERSION="$(node -p "require('./manifest.json').version")"
+          if [ "$GITHUB_REF_NAME" != "$VERSION" ]; then
+            echo "::error::Tag \"$GITHUB_REF_NAME\" und manifest.json (\"$VERSION\") stimmen nicht überein."
+            echo "BRAT findet das Release sonst nicht. Tag ohne \"v\" vergeben und gleich der Version halten."
+            exit 1
+          fi
+          echo "Version $VERSION"
+
+      - name: Plugin prüfen
+        run: |
+          # Es gibt keinen Build: main.js ist der Quellcode. Geprüft wird, dass sie
+          # sich fehlerfrei parsen lässt und die Anhänge vollständig sind.
+          node --check main.js
+          for datei in main.js manifest.json styles.css; do
+            test -f "$datei" || { echo "::error::$datei fehlt"; exit 1; }
+          done
+
+      - name: Release veröffentlichen
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+            main.js manifest.json styles.css

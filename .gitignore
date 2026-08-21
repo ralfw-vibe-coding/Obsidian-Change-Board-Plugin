@@ -1,0 +1,5 @@
+.DS_Store
+*.log
+
+# Legt Obsidian zur Laufzeit an: Einstellungen, Filterstand, Zoom, Tagesfokus.
+data.json

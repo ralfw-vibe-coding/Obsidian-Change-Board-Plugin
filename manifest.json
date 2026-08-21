@@ -1,0 +1,9 @@
+{
+  "id": "change-board",
+  "name": "Change Board",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "Veränderungsaufgaben als Notizen führen und auf einem Kanban-Board verfolgen.",
+  "author": "Ralf Westphal",
+  "isDesktopOnly": false
+}

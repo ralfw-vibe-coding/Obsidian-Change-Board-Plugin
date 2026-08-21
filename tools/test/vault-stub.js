@@ -68,10 +68,29 @@ function vaultLaden(wurzel) {
   };
   durchlaufen(wurzel);
 
+  // Angelegt und gelöscht wird nur im Arbeitsspeicher — das Vault bleibt unberührt.
+  const angelegt = [];
+  const geloescht = [];
+
   const vault = {
     getName: () => "Change Board Test Vault",
     getAbstractFileByPath: (p) => ordner.get(p) || dateien.get(p) || null,
     cachedRead: async (datei) => datei.inhalt,
+    create: async (pfad, inhalt) => {
+      if (dateien.has(pfad)) throw new Error(`Datei existiert bereits: ${pfad}`);
+      const datei = new TFile(pfad, inhalt);
+      dateien.set(pfad, datei);
+      const eltern = pfad.split("/").slice(0, -1).join("/");
+      holeOrdner(eltern).children.push(datei);
+      angelegt.push({ pfad, inhalt });
+      return datei;
+    },
+    createFolder: async (pfad) => {
+      const f = holeOrdner(pfad);
+      const eltern = pfad.split("/").slice(0, -1).join("/");
+      if (!holeOrdner(eltern).children.includes(f)) holeOrdner(eltern).children.push(f);
+      return f;
+    },
     on: () => ({}),
   };
 
@@ -99,7 +118,16 @@ function vaultLaden(wurzel) {
     },
   };
 
-  return { vault, metadataCache, fileManager, dateien, geschrieben };
+  fileManager.trashFile = async (datei) => {
+    dateien.delete(datei.path);
+    for (const o of ordner.values()) {
+      const i = o.children.indexOf(datei);
+      if (i >= 0) o.children.splice(i, 1);
+    }
+    geloescht.push(datei.path);
+  };
+
+  return { vault, metadataCache, fileManager, dateien, geschrieben, angelegt, geloescht };
 }
 
 module.exports = { vaultLaden, frontmatterLesen };

@@ -8,7 +8,7 @@
  */
 
 const {
-  Plugin, ItemView, PluginSettingTab, Setting, MarkdownRenderer,
+  Plugin, ItemView, PluginSettingTab, Setting, MarkdownRenderer, Menu, Modal, Notice,
   TFile, TFolder, addIcon, debounce, normalizePath,
 } = require("obsidian");
 
@@ -36,6 +36,18 @@ const ARTEN = {
 const ALLE_ARTEN = Object.keys(ARTEN);
 
 const ZOOM = { min: 50, max: 200, schritt: 10, normal: 100 };
+
+/** Die Abschnitte, die eine Leitstern-Notiz ausfüllt. Gerüst für neue Leitsterne. */
+const LEITSTERN_ABSCHNITTE = [
+  "Worum es geht",
+  "Wenn",
+  "Im Weg steht",
+  "Woran wir es gesehen haben",
+  "Warum das so ist",
+  "Merksatz",
+  "Richtungen",
+  "Aufgelöst, wenn",
+];
 
 const STANDARD_EINSTELLUNGEN = {
   boardTitel: "",
@@ -146,6 +158,38 @@ function fokusBestimmen(titel, zustand, tag, wuerfeln) {
   neu.verbraucht.push(gewaehlt);
   neu.tag = tag;
   return { leitstern: gewaehlt, zustand: neu };
+}
+
+/** Einen Wert so ausgeben, dass YAML ihn wieder als Zeichenkette liest. */
+function yamlWert(wert) {
+  if (typeof wert === "number" || typeof wert === "boolean") return String(wert);
+  const s = String(wert);
+  const heikel =
+    s === "" ||
+    /^[-?:,[\]{}#&*!|>'"%@`]/.test(s) ||
+    /:\s|\s#/.test(s) ||
+    /^\s|\s$/.test(s) ||
+    /^(true|false|null|yes|no|on|off|~)$/i.test(s) ||
+    /^[-+]?[0-9.]+$/.test(s);
+  return heikel ? '"' + s.replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"' : s;
+}
+
+/** Frontmatter aus einem einfachen Objekt bauen; leere Felder bleiben als Platzhalter stehen. */
+function frontmatter(felder) {
+  const zeilen = ["---"];
+  for (const [schluessel, wert] of Object.entries(felder)) {
+    if (wert === undefined) continue;
+    if (Array.isArray(wert)) {
+      zeilen.push(`${schluessel}:`);
+      wert.forEach((e) => zeilen.push(`  - ${yamlWert(e)}`));
+    } else if (wert === null || wert === "") {
+      zeilen.push(`${schluessel}:`);
+    } else {
+      zeilen.push(`${schluessel}: ${yamlWert(wert)}`);
+    }
+  }
+  zeilen.push("---");
+  return zeilen.join("\n");
 }
 
 /** Ein Element aus einer Liste entfernen oder hinzufügen. */
@@ -268,6 +312,92 @@ class Datenquelle {
     await this.app.fileManager.processFrontMatter(aufgabe.datei, (fm) => {
       fm.status = status;
     });
+  }
+
+  /* ---- Notizen anlegen ---- */
+
+  async ordnerSichern(pfad) {
+    const norm = normalizePath(pfad);
+    if (!this.app.vault.getAbstractFileByPath(norm)) await this.app.vault.createFolder(norm);
+    return norm;
+  }
+
+  /** Einen freien Dateinamen im Ordner finden: "Neue Aufgabe", "Neue Aufgabe 2", … */
+  freierPfad(ordner, wunsch) {
+    let name = wunsch;
+    let n = 1;
+    while (this.app.vault.getAbstractFileByPath(`${ordner}/${name}.md`)) {
+      n += 1;
+      name = `${wunsch} ${n}`;
+    }
+    return `${ordner}/${name}.md`;
+  }
+
+  /**
+   * Legt eine Aufgabennotiz an. Gefüllt wird nur, was das Board ohnehin weiß —
+   * Titel und Beschreibung schreibt der Nutzer anschließend in Obsidian selbst.
+   */
+  async aufgabeAnlegen({ thema, status, reihenfolge }) {
+    const ordner = await this.ordnerSichern(this.einstellungen.aufgabenOrdner);
+    const pfad = this.freierPfad(ordner, "Neue Aufgabe");
+    const kopf = frontmatter({
+      typ: "aufgabe",
+      status: status || "backlog",
+      art: "massnahme",
+      thema: thema ? `[[${thema.titel}]]` : null,
+      leitsterne: null,
+      reihenfolge: typeof reihenfolge === "number" ? reihenfolge : 0,
+    });
+    return this.app.vault.create(pfad, `${kopf}\n\n`);
+  }
+
+  /** Legt eine Leitstern-Notiz samt Abschnittsgerüst an. */
+  async leitsternAnlegen(nummer) {
+    const ordner = await this.ordnerSichern(this.einstellungen.leitsterneOrdner);
+    const pfad = this.freierPfad(ordner, "Neuer Leitstern");
+    const kopf = frontmatter({
+      typ: "leitstern",
+      nummer,
+      kurzname: null,
+      leitsatz: null,
+      wurzelproblem: null,
+    });
+    const gerüst = LEITSTERN_ABSCHNITTE.map((h) => `## ${h}\n\n`).join("\n");
+    return this.app.vault.create(pfad, `${kopf}\n\n${gerüst}`);
+  }
+
+  /** Notiz in den Papierkorb legen — welchen, entscheidet Obsidians Einstellung. */
+  async notizLoeschen(datei) {
+    await this.app.fileManager.trashFile(datei);
+  }
+}
+
+/** Rückfrage vor dem Löschen. */
+class LoeschModal extends Modal {
+  constructor(app, titel, hinweis, beiBestaetigung) {
+    super(app);
+    this.titel = titel;
+    this.hinweis = hinweis;
+    this.beiBestaetigung = beiBestaetigung;
+  }
+
+  onOpen() {
+    this.titleEl.setText("Notiz löschen");
+    this.contentEl.createEl("p", { text: `„${this.titel}“ in den Papierkorb verschieben?` });
+    if (this.hinweis) this.contentEl.createEl("p", { cls: "cb-modal-hinweis", text: this.hinweis });
+
+    const knoepfe = this.contentEl.createDiv({ cls: "cb-modal-knoepfe" });
+    const abbrechen = knoepfe.createEl("button", { text: "Abbrechen" });
+    abbrechen.addEventListener("click", () => this.close());
+    const loeschen = knoepfe.createEl("button", { cls: "mod-warning", text: "Löschen" });
+    loeschen.addEventListener("click", () => {
+      this.close();
+      void this.beiBestaetigung();
+    });
+  }
+
+  onClose() {
+    this.contentEl.empty();
   }
 }
 
@@ -418,6 +548,7 @@ class ChangeBoardView extends ItemView {
       if (!gruppen.has(schluessel)) {
         gruppen.set(schluessel, {
           schluessel,
+          thema,
           titel: thema ? thema.titel : "Ohne Thema",
           kennzeichen: thema ? thema.kennzeichen : "",
           badge: thema ? thema.badge : "",
@@ -464,6 +595,7 @@ class ChangeBoardView extends ItemView {
     kopf.createDiv({ cls: "cb-luecke" });
     kopf.createSpan({ cls: "cb-kopf-zahl", text: `${this.daten.aufgaben.length} Aufgaben` });
     this.zoomZeichnen(kopf);
+    kopf.createSpan({ cls: "cb-version", text: "v" + this.plugin.manifest.version });
   }
 
   /* ---- Zoom ---- */
@@ -510,6 +642,7 @@ class ChangeBoardView extends ItemView {
     const beschriftung = sektion.createDiv({ cls: "cb-sterne-kopf" });
     beschriftung.createEl("h1", { text: this.plugin.einstellungen.leitsterneUeberschrift });
     beschriftung.createEl("p", { text: "Woran wir jede Entscheidung messen. Anklicken öffnet das Problem dahinter." });
+    this.plusKnopf(beschriftung, "Leitstern hinzufügen", () => this.leitsternAnlegen());
 
     const reihe = sektion.createDiv({ cls: "cb-sternreihe" });
 
@@ -527,6 +660,14 @@ class ChangeBoardView extends ItemView {
         this.ansicht.offenerLeitstern = offen ? null : stern.titel;
         await this.ansichtSpeichern();
         this.zeichnen();
+      });
+      this.kontextmenue(kachel, stern.datei, () => {
+        const betroffen = this.daten.aufgaben.filter((a) =>
+          this.leitsterneVon(a).some((l) => l.datei.path === stern.datei.path)
+        ).length;
+        return betroffen > 0
+          ? `${betroffen} Aufgaben verweisen darauf; die Zuordnung geht dabei verloren.`
+          : "";
       });
     }
 
@@ -618,7 +759,17 @@ class ChangeBoardView extends ItemView {
     const gruppen = this.gruppieren(this.daten.aufgaben.filter((a) => this.passt(a)));
 
     if (gruppen.length === 0) {
-      panel.createDiv({ cls: "cb-leer", text: "Nichts gefunden. Filter zurücksetzen oder Suchbegriff ändern." });
+      const leer = panel.createDiv({ cls: "cb-leer" });
+      const etwasDa = this.daten.aufgaben.length > 0;
+      leer.createDiv({
+        text: etwasDa
+          ? "Nichts gefunden. Filter zurücksetzen oder Suchbegriff ändern."
+          : "Noch keine Aufgaben im Backlog.",
+      });
+      if (!etwasDa) {
+        const knopf = leer.createEl("button", { cls: "cb-btn cb-btn-akzent", text: "+ Aufgabe anlegen" });
+        knopf.addEventListener("click", () => void this.aufgabeAnlegen(null));
+      }
       return;
     }
 
@@ -639,6 +790,7 @@ class ChangeBoardView extends ItemView {
       kopf.createSpan({ cls: "cb-gruppe-name", text: gruppe.titel });
       if (gruppe.badge) kopf.createSpan({ cls: "cb-gruppe-badge", text: gruppe.badge });
       kopf.createSpan({ cls: "cb-gruppe-zahl", text: String(gruppe.aufgaben.length) });
+      this.plusKnopf(kopf, "Aufgabe in diesem Thema anlegen", () => this.aufgabeAnlegen(gruppe.thema));
 
       const auf = async () => {
         umschalten(this.ansicht.offeneThemen, gruppe.schluessel);
@@ -688,6 +840,7 @@ class ChangeBoardView extends ItemView {
       mitte.createDiv({ cls: "cb-zeile-problem", text: "Ausgangslage: " + aufgabe.problem });
     }
     this.markierungenZeichnen(mitte.createDiv({ cls: "cb-marken" }), aufgabe);
+    this.kontextmenue(zeile, aufgabe.datei);
 
     const aktionen = zeile.createDiv({ cls: "cb-aktionen" });
     const knopf = (beschriftung, ziel, primaer) => {
@@ -823,6 +976,9 @@ class ChangeBoardView extends ItemView {
       titel.createSpan({ text: spalte.name });
       titel.createSpan({ cls: "cb-spalte-zahl", text: String(aufgaben.length) });
       kopf.createDiv({ cls: "cb-spalte-unter", text: spalte.untertitel });
+      this.plusKnopf(titel, `Aufgabe in „${spalte.name}“ anlegen`, () =>
+        this.aufgabeAnlegen(null, spalte.key)
+      );
 
       const koerper = el.createDiv({ cls: "cb-spalte-koerper" });
       if (aufgaben.length === 0) {
@@ -852,6 +1008,7 @@ class ChangeBoardView extends ItemView {
       this.markdown(aufgabe.beschreibung, karte.createDiv({ cls: "cb-karte-text cb-md" }), aufgabe.datei);
     }
     this.markierungenZeichnen(karte.createDiv({ cls: "cb-marken" }), aufgabe);
+    this.kontextmenue(karte, aufgabe.datei);
 
     const fuss = karte.createDiv({ cls: "cb-karte-fuss" });
     const auswahl = fuss.createEl("select", { cls: "cb-verschieben" });
@@ -862,6 +1019,88 @@ class ChangeBoardView extends ItemView {
     }
     auswahl.createEl("option", { value: "backlog", text: "← zurück ins Backlog" });
     auswahl.addEventListener("change", () => void this.statusSetzen(aufgabe, auswahl.value));
+  }
+
+  /* ---- Anlegen und Löschen ---- */
+
+  /** Ein unauffälliges "+" mit Beschriftung als Tooltip. */
+  plusKnopf(eltern, beschreibung, beiKlick) {
+    const knopf = eltern.createEl("button", { cls: "cb-plus", text: "+" });
+    knopf.setAttribute("aria-label", beschreibung);
+    knopf.setAttribute("title", beschreibung);
+    knopf.addEventListener("click", (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      void beiKlick();
+    });
+    return knopf;
+  }
+
+  /**
+   * Legt eine Aufgabennotiz an und öffnet sie zum Ausfüllen — mit aktivem
+   * Umbenennen des Titels, denn der Dateiname ist der Aufgabentitel.
+   */
+  async aufgabeAnlegen(thema, status) {
+    try {
+      const imThema = thema
+        ? this.daten.aufgaben.filter((a) => {
+            const t = this.themaVon(a);
+            return t && t.datei.path === thema.datei.path;
+          })
+        : [];
+      const reihenfolge = imThema.reduce((max, a) => Math.max(max, a.reihenfolge + 1), 0);
+      const datei = await this.quelle.aufgabeAnlegen({ thema, status, reihenfolge });
+      await this.notizOeffnen(datei);
+    } catch (fehler) {
+      new Notice("Aufgabe konnte nicht angelegt werden: " + fehler.message);
+    }
+  }
+
+  async leitsternAnlegen() {
+    try {
+      const nummer = this.daten.leitsterne.reduce((max, l) => Math.max(max, l.nummer + 1), 1);
+      const datei = await this.quelle.leitsternAnlegen(nummer);
+      await this.notizOeffnen(datei);
+    } catch (fehler) {
+      new Notice("Leitstern konnte nicht angelegt werden: " + fehler.message);
+    }
+  }
+
+  /** Notiz öffnen; bei neuen Notizen steht der Titel gleich zum Umbenennen bereit. */
+  async notizOeffnen(datei, neu = true) {
+    const leaf = this.app.workspace.getLeaf("tab");
+    await leaf.openFile(datei, neu ? { eState: { rename: "all" } } : undefined);
+  }
+
+  /** Rechtsklick auf Zeile, Karte oder Kachel: öffnen oder löschen. */
+  kontextmenue(element, datei, hinweisGeber) {
+    element.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      const menü = new Menu();
+      menü.addItem((eintrag) =>
+        eintrag
+          .setTitle("Notiz öffnen")
+          .setIcon("file-text")
+          .onClick(() => void this.notizOeffnen(datei, false))
+      );
+      menü.addItem((eintrag) =>
+        eintrag
+          .setTitle("Notiz löschen")
+          .setIcon("trash")
+          .onClick(() => {
+            const hinweis = hinweisGeber ? hinweisGeber() : "";
+            new LoeschModal(this.app, datei.basename, hinweis, async () => {
+              try {
+                await this.quelle.notizLoeschen(datei);
+                new Notice(`„${datei.basename}“ in den Papierkorb verschoben.`);
+              } catch (fehler) {
+                new Notice("Löschen fehlgeschlagen: " + fehler.message);
+              }
+            }).open();
+          })
+      );
+      menü.showAtMouseEvent(e);
+    });
   }
 
   /* ---- Hilfen ---- */

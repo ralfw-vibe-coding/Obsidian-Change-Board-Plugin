@@ -17,7 +17,8 @@ const pruefe = (bedingung, beschreibung) => {
 };
 
 (async () => {
-  const { view, geschrieben, klick, aendern, eingabe, warte } = await boardAufbauen();
+  const { view, geschrieben, angelegt, geloescht, geoeffnet, manifest, klick, aendern, eingabe, rechtsklick, ereignisSenden, warte } =
+    await boardAufbauen();
   const el = () => view.contentEl;
   const zahlen = (selektor) => el().querySelectorAll(selektor).map((e) => Number(e.textContent));
 
@@ -170,6 +171,119 @@ const pruefe = (bedingung, beschreibung) => {
   pruefe(einziger.leitstern === "A", "bei nur einem Leitstern bleibt es bei diesem");
 
   pruefe(intern.heutigerTag(new Date(2026, 7, 3)) === "2026-08-03", "Tagesschlüssel in lokaler Zeit");
+
+  console.log("\nVersion");
+  const version = el().querySelector(".cb-version");
+  pruefe(version !== null, "Version steht in der Kopfzeile");
+  pruefe(
+    version.textContent === "v" + manifest.version,
+    `Version stimmt mit manifest.json überein (${version && version.textContent})`
+  );
+
+  console.log("\nAufgabe anlegen");
+  klick(el().querySelectorAll(".cb-tab")[0]);
+  await warte();
+  const gruppenkopf = el().querySelector(".cb-gruppe-kopf");
+  const gruppenPlus = gruppenkopf.querySelector(".cb-plus");
+  pruefe(gruppenPlus !== null, "jede Themengruppe hat ein +");
+  pruefe(gruppenPlus.getAttribute("title") !== null, "das + erklärt sich per Tooltip");
+
+  const vorher = angelegt.length;
+  const ereignis = ereignisSenden(gruppenPlus, "click");
+  await warte();
+  pruefe(ereignis.propagationStopped, "der Klick klappt die Gruppe nicht mit zu");
+  pruefe(angelegt.length === vorher + 1, "eine Notiz wurde angelegt");
+
+  const neueAufgabe = angelegt[angelegt.length - 1];
+  pruefe(neueAufgabe.pfad === "Change Board/Aufgaben/Neue Aufgabe.md", `im Aufgabenordner (${neueAufgabe.pfad})`);
+  pruefe(/^---\ntyp: aufgabe\n/.test(neueAufgabe.inhalt), "Frontmatter beginnt mit typ: aufgabe");
+  pruefe(/\nstatus: backlog\n/.test(neueAufgabe.inhalt), "Status ist backlog");
+  pruefe(/\nart: massnahme\n/.test(neueAufgabe.inhalt), "Art ist massnahme");
+  pruefe(/\nthema: "\[\[.+\]\]"\n/.test(neueAufgabe.inhalt), "Thema ist als Wikilink gesetzt");
+  pruefe(/\nleitsterne:\n/.test(neueAufgabe.inhalt), "leitsterne steht als leeres Feld bereit");
+  const zuletztGeoeffnet = geoeffnet[geoeffnet.length - 1];
+  pruefe(zuletztGeoeffnet.pfad === neueAufgabe.pfad, "die neue Notiz wird zum Ausfüllen geöffnet");
+  pruefe(
+    zuletztGeoeffnet.zustand && zuletztGeoeffnet.zustand.eState.rename === "all",
+    "und ihr Titel steht gleich zum Umbenennen bereit"
+  );
+
+  klick(el().querySelector(".cb-gruppe-kopf .cb-plus"));
+  await warte();
+  pruefe(
+    angelegt[angelegt.length - 1].pfad === "Change Board/Aufgaben/Neue Aufgabe 2.md",
+    `zweite Notiz weicht dem Namen aus (${angelegt[angelegt.length - 1].pfad})`
+  );
+
+  klick(el().querySelectorAll(".cb-tab")[1]);
+  await warte();
+  const spaltenPlus = el().querySelector(".cb-spalte-titel .cb-plus");
+  pruefe(spaltenPlus !== null, "auch jede Board-Spalte hat ein +");
+  klick(spaltenPlus);
+  await warte();
+  pruefe(
+    /\nstatus: vereinbart\n/.test(angelegt[angelegt.length - 1].inhalt),
+    "eine Karte aus der Spalte startet in deren Status"
+  );
+
+  console.log("\nLeitstern anlegen");
+  const sternPlus = el().querySelector(".cb-sterne-kopf .cb-plus");
+  pruefe(sternPlus !== null, "die Leitstern-Überschrift trägt ein +");
+  klick(sternPlus);
+  await warte();
+  const neuerStern = angelegt[angelegt.length - 1];
+  pruefe(neuerStern.pfad === "Change Board/Leitsterne/Neuer Leitstern.md", `im Leitsternordner (${neuerStern.pfad})`);
+  pruefe(/\nnummer: 6\n/.test(neuerStern.inhalt), "bekommt die nächste freie Nummer");
+  pruefe(
+    (neuerStern.inhalt.match(/^## /gm) || []).length === 8,
+    "bringt das Gerüst aller acht Abschnitte mit"
+  );
+  pruefe(neuerStern.inhalt.includes("## Aufgelöst, wenn"), "einschließlich „Aufgelöst, wenn“");
+
+  console.log("\nLöschen");
+  registriert.menues.length = 0;
+  registriert.modale.length = 0;
+  klick(el().querySelectorAll(".cb-tab")[0]);
+  await warte();
+  const zeile = el().querySelector(".cb-zeile");
+  const menüEreignis = ereignisSenden(zeile, "contextmenu");
+  pruefe(menüEreignis.defaultPrevented, "Rechtsklick unterdrückt das Standardmenü");
+  const menü = registriert.menues[0];
+  pruefe(menü !== undefined && menü.eintraege.length === 2, "Kontextmenü mit zwei Einträgen");
+  pruefe(
+    menü.eintraege.map((e) => e.titel).join(" | ") === "Notiz öffnen | Notiz löschen",
+    'die Einträge heißen „Notiz öffnen“ und „Notiz löschen“'
+  );
+
+  menü.eintraege[1].klick();
+  const modal = registriert.modale[0];
+  pruefe(modal !== undefined, "Löschen fragt erst nach");
+  pruefe(modal.contentEl.textContent.includes("Papierkorb"), "die Rückfrage nennt den Papierkorb");
+
+  const abbrechen = modal.contentEl.querySelectorAll("button").find((b) => b.textContent === "Abbrechen");
+  klick(abbrechen);
+  await warte();
+  pruefe(geloescht.length === 0, "Abbrechen löscht nichts");
+
+  menü.eintraege[1].klick();
+  const modal2 = registriert.modale[registriert.modale.length - 1];
+  klick(modal2.contentEl.querySelectorAll("button").find((b) => b.textContent === "Löschen"));
+  await warte();
+  pruefe(geloescht.length === 1, "Bestätigen legt die Notiz in den Papierkorb");
+  pruefe(
+    registriert.hinweise.some((h) => h.includes("Papierkorb")),
+    "und meldet das per Notice"
+  );
+
+  registriert.menues.length = 0;
+  ereignisSenden(el().querySelector(".cb-stern"), "contextmenu");
+  registriert.menues[0].eintraege[1].klick();
+  const sternModal = registriert.modale[registriert.modale.length - 1];
+  pruefe(
+    /\d+ Aufgaben verweisen darauf/.test(sternModal.contentEl.textContent),
+    "beim Leitstern warnt die Rückfrage vor verwaisten Zuordnungen"
+  );
+  klick(sternModal.contentEl.querySelectorAll("button").find((b) => b.textContent === "Abbrechen"));
 
   console.log(fehler === 0 ? "\nAlle Prüfungen bestanden." : `\n${fehler} Prüfung(en) fehlgeschlagen.`);
   process.exit(fehler === 0 ? 0 : 1);

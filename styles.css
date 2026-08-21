@@ -51,6 +51,47 @@
 .change-board .cb-btn:hover { border-color: var(--cb-rand-stark); color: var(--text-normal); }
 .change-board .cb-btn-akzent { border-color: var(--cb-akzent); color: var(--cb-akzent); background: var(--cb-akzent-weich); }
 
+/* ------------------------------------------------- Version, Plus, Löschen */
+
+.change-board .cb-version {
+  font-size: 11px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Zurückhaltend, bis man mit der Maus in die Nähe kommt. */
+.change-board .cb-plus {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-s);
+  box-shadow: none;
+  color: var(--text-faint);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1;
+  height: auto;
+  padding: 2px 7px;
+  cursor: pointer;
+  flex: none;
+}
+.change-board .cb-plus:hover {
+  background: var(--cb-akzent-weich);
+  border-color: var(--cb-akzent);
+  color: var(--cb-akzent);
+}
+.change-board .cb-gruppe-kopf .cb-plus,
+.change-board .cb-spalte-titel .cb-plus { opacity: 0; transition: opacity 0.12s; }
+.change-board .cb-gruppe-kopf:hover .cb-plus,
+.change-board .cb-gruppe-kopf:focus-within .cb-plus,
+.change-board .cb-spalte:hover .cb-plus,
+.change-board .cb-spalte:focus-within .cb-plus { opacity: 1; }
+.change-board .cb-leer .cb-plus { opacity: 1; }
+.change-board .cb-leer button { margin-top: 12px; }
+
+.cb-modal-hinweis { color: var(--text-muted); font-size: 13px; }
+.cb-modal-knoepfe { display: flex; gap: 8px; justify-content: flex-end; margin-top: 18px; }
+
 /* ------------------------------------------------------------------- Zoom */
 
 .change-board .cb-zoom {

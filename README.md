@@ -52,6 +52,12 @@ badge: zuerst anpacken         # optional
 ---
 ```
 
+### Thema
+
+Frontmatter: `id`, `reihenfolge`, `kennzeichen` (Kürzel im Gruppenkopf) und optional
+`kritisch`, `hervorgehoben`, `badge`. Themen legt man von Hand an — dafür gibt es
+im Board bislang kein `+`.
+
 ### Leitstern
 
 Frontmatter: `nummer`, `kurzname`, `leitsatz`, `wurzelproblem`, `schluesselproblem`.
@@ -74,8 +80,24 @@ Von Hand geht es genauso: die drei Dateien aus einem Release nach
 Ribbon-Symbol oder Befehl „Change Board öffnen". Ordner, Board-Titel und Tagesfokus
 lassen sich in den Plugin-Einstellungen ändern.
 
+**Aufgaben und Leitsterne anlegen** — ein `+` erscheint, wenn die Maus über einer
+Themengruppe oder einer Board-Spalte steht; neben der Leitstern-Überschrift steht es
+dauerhaft. Der Klick legt die Notiz mit vorbereitetem Frontmatter an und öffnet sie,
+den Titel gleich zum Umbenennen markiert. Ausgefüllt wird sie im normalen
+Markdown-Editor — das Board bringt dafür keinen eigenen mit.
+
+Was schon feststeht, ist vorbelegt: eine Aufgabe aus einer Themengruppe bekommt dieses
+Thema, eine aus einer Board-Spalte deren Status. Ein neuer Leitstern bringt das Gerüst
+aller acht Abschnitte mit, damit klar ist, was hineingehört.
+
+**Löschen** — Rechtsklick auf eine Zeile, eine Karte oder eine Leitstern-Kachel. Nach
+einer Rückfrage wandert die Notiz in den Papierkorb, den Obsidian eingestellt hat.
+Beim Leitstern nennt die Rückfrage, wie viele Aufgaben auf ihn verweisen.
+
 **Zoom** — oben rechts, `[− 100 % +]` in Zehnerschritten zwischen 50 % und 200 %.
 Ein Klick auf den Wert setzt auf 100 % zurück. Die Stufe gilt pro Vault, nicht pro Notiz.
+
+Die Versionsnummer steht rechts daneben.
 
 **Tagesfokus** — jeden Tag steht ein anderer Leitstern im Fokus. Die Auswahl bleibt
 innerhalb eines Tages stehen, jeder Leitstern kommt einmal an die Reihe, bevor sich

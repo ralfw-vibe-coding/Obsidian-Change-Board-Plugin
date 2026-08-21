@@ -33,7 +33,7 @@ async function boardAufbauen() {
         "Pfad als Argument übergeben oder in CHANGE_BOARD_VAULT setzen."
     );
   }
-  const { vault, metadataCache, fileManager, geschrieben } = vaultLaden(vaultPfad);
+  const { vault, metadataCache, fileManager, geschrieben, angelegt, geloescht } = vaultLaden(vaultPfad);
   const geoeffnet = [];
   const blaetter = [];
 
@@ -45,13 +45,20 @@ async function boardAufbauen() {
       getLeavesOfType: () => blaetter,
       getLeaf: () => blatt,
       revealLeaf: () => {},
-      openFile: (d) => geoeffnet.push(d.path),
     },
   };
-  const blatt = { app, containerEl: neuesDokument(), setViewState: async () => {}, view: null };
+  // openFile gehört wie in Obsidian ans Blatt, nicht an den Workspace.
+  const blatt = {
+    app,
+    containerEl: neuesDokument(),
+    setViewState: async () => {},
+    openFile: async (datei, zustand) => geoeffnet.push({ pfad: datei.path, zustand }),
+    view: null,
+  };
   blaetter.push(blatt);
 
-  const plugin = new ChangeBoardPlugin(app, { id: "change-board" });
+  const manifest = JSON.parse(require("node:fs").readFileSync(join(repo, "manifest.json"), "utf8"));
+  const plugin = new ChangeBoardPlugin(app, manifest);
   await plugin.onload();
 
   const view = plugin._views.get("change-board-view")(blatt);
@@ -62,8 +69,18 @@ async function boardAufbauen() {
     plugin,
     view,
     geschrieben,
+    angelegt,
+    geloescht,
     geoeffnet,
+    manifest,
     klick: (el) => el.dispatchEvent(new Ereignis("click")),
+    rechtsklick: (el) => el.dispatchEvent(new Ereignis("contextmenu")),
+    // Gibt das Ereignis zurück, damit sich preventDefault/stopPropagation prüfen lassen.
+    ereignisSenden: (el, typ) => {
+      const e = new Ereignis(typ);
+      el.dispatchEvent(e);
+      return e;
+    },
     aendern: (el) => el.dispatchEvent(new Ereignis("change")),
     eingabe: (el) => el.dispatchEvent(new Ereignis("input")),
     warte: (ms = 20) => new Promise((r) => setTimeout(r, ms)),

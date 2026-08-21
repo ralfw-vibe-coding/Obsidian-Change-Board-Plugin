@@ -4,7 +4,7 @@
 
 const { neuesDokument } = require("./mini-dom");
 
-const registriert = { icons: new Map(), ribbon: [], intervalle: [] };
+const registriert = { icons: new Map(), ribbon: [], intervalle: [], hinweise: [], menues: [], modale: [] };
 
 class TAbstractFile {
   constructor(path) {
@@ -97,9 +97,42 @@ function debounce(fn) {
   return f;
 }
 class WorkspaceLeaf {}
-class Notice { constructor(text) { this.text = text; } }
+class Notice {
+  constructor(text) {
+    this.text = text;
+    registriert.hinweise.push(text);
+  }
+}
+
+/** Kontextmenü: die Einträge werden gesammelt, statt sie anzuzeigen. */
+class Menu {
+  constructor() { this.eintraege = []; }
+  addItem(aufbau) {
+    const eintrag = {
+      titel: "", icon: "", klick: null,
+      setTitle(t) { this.titel = t; return this; },
+      setIcon(i) { this.icon = i; return this; },
+      onClick(fn) { this.klick = fn; return this; },
+    };
+    aufbau(eintrag);
+    this.eintraege.push(eintrag);
+    return this;
+  }
+  addSeparator() { return this; }
+  showAtMouseEvent() { registriert.menues.push(this); return this; }
+}
+
+class Modal {
+  constructor(app) {
+    this.app = app;
+    this.titleEl = neuesDokument();
+    this.contentEl = neuesDokument();
+  }
+  open() { registriert.modale.push(this); if (this.onOpen) this.onOpen(); }
+  close() { if (this.onClose) this.onClose(); }
+}
 
 module.exports = {
   TAbstractFile, TFile, TFolder, Component, ItemView, Plugin, PluginSettingTab,
-  Setting, MarkdownRenderer, addIcon, normalizePath, debounce, WorkspaceLeaf, Notice, registriert,
+  Setting, MarkdownRenderer, addIcon, normalizePath, debounce, WorkspaceLeaf, Notice, Menu, Modal, registriert,
 };

@@ -54,7 +54,9 @@ function vaultLaden(wurzel) {
     for (const eintrag of readdirSync(absolut)) {
       if (eintrag.startsWith(".")) continue;
       const voll = join(absolut, eintrag);
-      const rel = relative(wurzel, voll).split(sep).join("/");
+      // Wie Obsidian: Pfade auf NFC normalisieren. Das Dateisystem liefert auf macOS
+      // oft NFD ("u" + Trema), Wikilinks in den Notizen stehen dagegen in NFC.
+      const rel = relative(wurzel, voll).split(sep).join("/").normalize("NFC");
       const elternPfad = rel.split("/").slice(0, -1).join("/");
       if (statSync(voll).isDirectory()) {
         holeOrdner(elternPfad).children.push(holeOrdner(rel));
@@ -97,8 +99,9 @@ function vaultLaden(wurzel) {
   const metadataCache = {
     getFileCache: (datei) => ({ frontmatter: frontmatterLesen(datei.inhalt) }),
     getFirstLinkpathDest: (link) => {
+      const ziel = link.normalize("NFC");
       for (const datei of dateien.values()) {
-        if (datei.basename === link || datei.path === link || datei.path === link + ".md") return datei;
+        if (datei.basename === ziel || datei.path === ziel || datei.path === ziel + ".md") return datei;
       }
       return null;
     },

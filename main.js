@@ -363,13 +363,13 @@ class Datenquelle {
    * Legt eine Aufgabennotiz an. Gefüllt wird nur, was das Board ohnehin weiß —
    * Titel und Beschreibung schreibt der Nutzer anschließend in Obsidian selbst.
    */
-  async aufgabeAnlegen({ thema, status, reihenfolge }) {
+  async aufgabeAnlegen({ thema, status, reihenfolge, art }) {
     const ordner = await this.ordnerSichern(this.einstellungen.aufgabenOrdner);
     const pfad = this.freierPfad(ordner, "Neue Aufgabe");
     const kopf = frontmatter({
       typ: "aufgabe",
       status: status || "backlog",
-      art: "massnahme",
+      art: art || "massnahme",
       thema: thema ? `[[${thema.titel}]]` : null,
       leitsterne: null,
       reihenfolge: typeof reihenfolge === "number" ? reihenfolge : 0,
@@ -629,7 +629,9 @@ class ChangeBoardView extends ItemView {
 
   passt(aufgabe) {
     const a = this.ansicht;
-    if (aufgabe.status !== "backlog") return false;
+    // Ohne Suchbegriff zeigt der Backlog nur, was noch nicht im Board steht.
+    // Wird gesucht, soll die Aufgabe gefunden werden, wo immer sie liegt.
+    if (aufgabe.status !== "backlog" && a.suche === "") return false;
     if (!a.arten.includes(aufgabe.art)) return false;
     if (a.leitsterne.length > 0) {
       const eigene = this.leitsterneVon(aufgabe).map((l) => l.titel);
@@ -646,13 +648,25 @@ class ChangeBoardView extends ItemView {
     return true;
   }
 
+  /** Die hervorgehobene Gruppe sammelt alle Sofortmaßnahmen, egal aus welchem Thema. */
+  sammelThema() {
+    return this.daten.themen.find((t) => t.hervorgehoben) || null;
+  }
+
+  /** In welcher Gruppe die Aufgabe im Backlog erscheint. */
+  gruppeVon(aufgabe) {
+    const sammel = this.sammelThema();
+    if (aufgabe.art === "sofortmassnahme" && sammel) return sammel;
+    return this.themaVon(aufgabe);
+  }
+
   gruppieren(aufgaben) {
     const gruppen = new Map();
     const reihenfolge = new Map();
     this.daten.themen.forEach((t, i) => reihenfolge.set(t.datei.path, i));
 
     for (const aufgabe of aufgaben) {
-      const thema = this.themaVon(aufgabe);
+      const thema = this.gruppeVon(aufgabe);
       const schluessel = thema ? thema.datei.path : "cb-ohne-thema";
       if (!gruppen.has(schluessel)) {
         gruppen.set(schluessel, {
@@ -920,6 +934,15 @@ class ChangeBoardView extends ItemView {
     }
 
     const hinweis = panel.createDiv({ cls: "cb-hinweis" });
+    if (this.ansicht.suche) {
+      hinweis.createEl("b", { text: "Gesucht wird überall: " });
+      hinweis.createSpan({
+        text:
+          "in Titeln, Beschreibungen und Kommentaren — und über den Backlog hinaus auch in " +
+          "dem, was schon im Board liegt. Solche Treffer tragen eine Marke mit ihrer Spalte.",
+      });
+      return;
+    }
     hinweis.createEl("b", { text: "So läuft es: " });
     hinweis.createSpan({
       text:
@@ -952,6 +975,12 @@ class ChangeBoardView extends ItemView {
     this.aufgabenMenue(zeile, aufgabe);
 
     const aktionen = zeile.createDiv({ cls: "cb-aktionen" });
+    if (aufgabe.status !== "backlog") {
+      // Ein Suchtreffer aus dem Board: hier hilft kein „→ Vereinbart“, sondern die
+      // gleiche Auswahl wie auf der Karte.
+      this.verschiebenZeichnen(aktionen, aufgabe);
+      return;
+    }
     const knopf = (beschriftung, ziel, primaer) => {
       const b = aktionen.createEl("button", {
         cls: "cb-akt" + (primaer ? " cb-akt-primaer" : ""),
@@ -967,6 +996,20 @@ class ChangeBoardView extends ItemView {
     knopf("✕ Verworfen", "verworfen", false);
   }
 
+  /** Auswahlfeld zum Verschieben — auf der Karte und bei Suchtreffern aus dem Board. */
+  verschiebenZeichnen(eltern, aufgabe) {
+    const auswahl = eltern.createEl("select", { cls: "cb-verschieben" });
+    auswahl.setAttribute("aria-label", "Karte verschieben");
+    for (const s of SPALTEN) {
+      const option = auswahl.createEl("option", { value: s.key, text: `${s.icon} ${s.name}` });
+      if (s.key === aufgabe.status) option.selected = true;
+    }
+    const zurueck = auswahl.createEl("option", { value: "backlog", text: "← zurück ins Backlog" });
+    if (aufgabe.status === "backlog") zurueck.selected = true;
+    auswahl.addEventListener("change", () => void this.statusSetzen(aufgabe, auswahl.value));
+    return auswahl;
+  }
+
   titelLink(eltern, aufgabe) {
     const link = eltern.createEl("a", { cls: "cb-titel-link", text: aufgabe.titel, href: "#" });
     link.addEventListener("click", (e) => {
@@ -978,6 +1021,21 @@ class ChangeBoardView extends ItemView {
   markierungenZeichnen(eltern, aufgabe) {
     const art = ARTEN[aufgabe.art];
     eltern.createSpan({ cls: `cb-marke ${art.klasse}`, text: `${art.icon} ${art.label}` });
+    if (aufgabe.status !== "backlog") {
+      const spalte = SPALTEN.find((s) => s.key === aufgabe.status);
+      if (spalte) {
+        const marke = eltern.createSpan({
+          cls: "cb-marke cb-marke-status",
+          text: `${spalte.icon} ${spalte.name}`,
+        });
+        marke.style.setProperty("--cb-farbe", spalte.farbe);
+      }
+    }
+    const eigenes = this.themaVon(aufgabe);
+    if (eigenes && this.gruppeVon(aufgabe) !== eigenes) {
+      // Steht die Aufgabe woanders, als ihr Thema sagt, gehört das auf die Karte.
+      eltern.createSpan({ cls: "cb-marke cb-marke-thema", text: eigenes.titel });
+    }
     if (aufgabe.kommentare) {
       // Der Inhalt bleibt in der Notiz; hier steht nur, dass es welchen gibt.
       const marke = eltern.createSpan({ cls: "cb-marke cb-marke-kommentar", text: "Kommentare" });
@@ -1047,6 +1105,18 @@ class ChangeBoardView extends ItemView {
         }
       }, 220, false)
     );
+
+    if (this.ansicht.suche) {
+      const treffer = this.daten.aufgaben.filter((a) => this.passt(a));
+      const imBoard = treffer.filter((a) => a.status !== "backlog").length;
+      leiste.createSpan({
+        cls: "cb-treffer",
+        text:
+          treffer.length === 0
+            ? "keine Treffer"
+            : `${treffer.length} Treffer` + (imBoard > 0 ? `, davon ${imBoard} in Umsetzung` : ""),
+      });
+    }
 
     if (this.filterAktiv()) {
       const zuruecksetzen = leiste.createEl("button", { cls: "cb-btn cb-btn-akzent", text: "✕ Filter zurücksetzen" });
@@ -1119,7 +1189,7 @@ class ChangeBoardView extends ItemView {
       const grenze = Math.max(1, zahl(this.plugin.einstellungen.kartenProSpalte, 10));
       const vollstaendig = this.ansicht.vollstaendigeSpalten.includes(spalte.key);
       const sichtbar = vollstaendig ? aufgaben : aufgaben.slice(0, grenze);
-      for (const aufgabe of sichtbar) this.karteZeichnen(koerper, aufgabe, spalte.key);
+      for (const aufgabe of sichtbar) this.karteZeichnen(koerper, aufgabe);
 
       const verborgen = aufgaben.length - sichtbar.length;
       if (verborgen > 0 || vollstaendig) {
@@ -1144,7 +1214,7 @@ class ChangeBoardView extends ItemView {
     });
   }
 
-  karteZeichnen(eltern, aufgabe, aktuell) {
+  karteZeichnen(eltern, aufgabe) {
     const karte = eltern.createDiv({ cls: "cb-karte" });
 
     const titel = karte.createDiv({ cls: "cb-karte-titel" });
@@ -1158,14 +1228,7 @@ class ChangeBoardView extends ItemView {
     this.aufgabenMenue(karte, aufgabe);
 
     const fuss = karte.createDiv({ cls: "cb-karte-fuss" });
-    const auswahl = fuss.createEl("select", { cls: "cb-verschieben" });
-    auswahl.setAttribute("aria-label", "Karte verschieben");
-    for (const s of SPALTEN) {
-      const option = auswahl.createEl("option", { value: s.key, text: `${s.icon} ${s.name}` });
-      if (s.key === aktuell) option.selected = true;
-    }
-    auswahl.createEl("option", { value: "backlog", text: "← zurück ins Backlog" });
-    auswahl.addEventListener("change", () => void this.statusSetzen(aufgabe, auswahl.value));
+    this.verschiebenZeichnen(fuss, aufgabe);
   }
 
   /* ---- Anlegen und Löschen ---- */
@@ -1196,7 +1259,13 @@ class ChangeBoardView extends ItemView {
           })
         : [];
       const reihenfolge = imThema.reduce((max, a) => Math.max(max, a.reihenfolge + 1), 0);
-      const datei = await this.quelle.aufgabeAnlegen({ thema, status, reihenfolge });
+      const datei = await this.quelle.aufgabeAnlegen({
+        thema,
+        status,
+        reihenfolge,
+        // Wer in der Sofortmaßnahmen-Gruppe anlegt, meint auch eine.
+        art: thema && thema.hervorgehoben ? "sofortmassnahme" : undefined,
+      });
       await this.notizOeffnen(datei);
     } catch (fehler) {
       new Notice("Aufgabe konnte nicht angelegt werden: " + fehler.message);

@@ -93,6 +93,48 @@ const pruefe = (bedingung, beschreibung) => {
   pruefe(treffer.length > 0 && treffer.length < 20, `Suche grenzt ein (${treffer.length} Treffer)`);
   pruefe(el().textContent.includes("Packliste"), "Treffer enthalten den Suchbegriff");
 
+  // Was im Board liegt, muss die Suche ebenfalls finden
+  const imBoard = view.daten.aufgaben.find((a) => a.status === "fertig");
+  const stichwort = imBoard.titel.split(" ").find((w) => w.length > 6) || imBoard.titel;
+  suchfeld.value = stichwort;
+  eingabe(suchfeld);
+  await warte();
+  const boardTreffer = el().querySelectorAll(".cb-zeile").find((z) => z.textContent.includes(imBoard.titel));
+  pruefe(boardTreffer !== undefined, `„${stichwort}“ findet auch eine Aufgabe aus dem Board`);
+  pruefe(
+    boardTreffer.querySelector(".cb-marke-status") !== null,
+    "der Treffer trägt eine Marke mit seiner Spalte"
+  );
+  pruefe(
+    boardTreffer.querySelector(".cb-marke-status").textContent.includes("Fertig"),
+    "die Marke nennt „Fertig“"
+  );
+  pruefe(
+    boardTreffer.querySelector(".cb-verschieben") !== null,
+    "statt „→ Vereinbart“ steht dort das Verschiebe-Feld"
+  );
+  pruefe(el().querySelector(".cb-treffer") !== null, "die Filterleiste nennt die Trefferzahl");
+  pruefe(
+    el().querySelector(".cb-treffer").textContent.includes("in Umsetzung"),
+    `und wie viele davon im Board liegen (${el().querySelector(".cb-treffer").textContent})`
+  );
+
+  // Auch der Kommentartext ist auffindbar
+  const mitText = view.daten.aufgaben.find((a) => a.status === "backlog");
+  mitText.kommentare = "Zebrastreifenkontrolle";
+  suchfeld.value = "Zebrastreifenkontrolle";
+  eingabe(suchfeld);
+  await warte();
+  pruefe(
+    el().querySelectorAll(".cb-zeile").some((z) => z.textContent.includes(mitText.titel)),
+    "die Suche greift auch in Kommentaren"
+  );
+  mitText.kommentare = "";
+
+  suchfeld.value = "Packliste";
+  eingabe(suchfeld);
+  await warte();
+
   const zuruecksetzen = el().querySelectorAll(".cb-btn").find((b) => b.textContent.includes("Filter zurücksetzen"));
   pruefe(zuruecksetzen !== undefined, "Zurücksetzen erscheint bei aktivem Filter");
   klick(zuruecksetzen);
@@ -207,6 +249,70 @@ const pruefe = (bedingung, beschreibung) => {
   pruefe(einziger.leitstern === "A", "bei nur einem Leitstern bleibt es bei diesem");
 
   pruefe(intern.heutigerTag(new Date(2026, 7, 3)) === "2026-08-03", "Tagesschlüssel in lokaler Zeit");
+
+  console.log("\nSofortmaßnahmen sammeln sich oben");
+  klick(el().querySelectorAll(".cb-tab")[0]);
+  await warte();
+  const sammel = view.sammelThema();
+  pruefe(sammel !== null, `es gibt eine hervorgehobene Gruppe (${sammel && sammel.titel})`);
+
+  // Eine Aufgabe aus einem anderen Thema zur Sofortmaßnahme erklären
+  const fremd = view.daten.aufgaben.find(
+    (a) => a.status === "backlog" && a.art !== "sofortmassnahme" && view.themaVon(a) && !view.themaVon(a).hervorgehoben
+  );
+  const fremdesThema = view.themaVon(fremd).titel;
+  fremd.art = "sofortmassnahme";
+  view.zeichnen();
+
+  const sammelGruppe = el()
+    .querySelectorAll(".cb-gruppe")
+    .find((g) => g.textContent.includes(sammel.titel));
+  pruefe(
+    sammelGruppe.textContent.includes(fremd.titel),
+    `„${fremd.titel}“ steht jetzt in der Sammelgruppe`
+  );
+  const andereGruppe = el()
+    .querySelectorAll(".cb-gruppe")
+    .find((g) => g.textContent.includes(fremdesThema) && !g.textContent.includes(sammel.titel));
+  pruefe(
+    !andereGruppe || !andereGruppe.textContent.includes(fremd.titel),
+    "und nicht mehr doppelt in ihrem eigenen Thema"
+  );
+  const fremdZeile = el().querySelectorAll(".cb-zeile").find((z) => z.textContent.includes(fremd.titel));
+  pruefe(
+    fremdZeile.querySelector(".cb-marke-thema") !== null,
+    "ihr eigenes Thema bleibt als Marke sichtbar"
+  );
+  pruefe(
+    fremdZeile.querySelector(".cb-marke-thema").textContent === fremdesThema,
+    `die Marke nennt das Thema (${fremdesThema})`
+  );
+
+  // Aufgaben, die ohnehin in der Sammelgruppe liegen, bekommen keine überflüssige Marke
+  const echteQw = el()
+    .querySelectorAll(".cb-gruppe")
+    .find((g) => g.textContent.includes(sammel.titel))
+    .querySelectorAll(".cb-zeile")
+    .find((z) => z.querySelector(".cb-kennung"));
+  pruefe(
+    echteQw && echteQw.querySelector(".cb-marke-thema") === null,
+    "die ursprünglichen Sofortmaßnahmen tragen keine Themenmarke"
+  );
+
+  fremd.art = "massnahme";
+  view.zeichnen();
+
+  // Anlegen aus der Sammelgruppe setzt gleich die passende Art
+  const sammelKopf = el()
+    .querySelectorAll(".cb-gruppe")
+    .find((g) => g.textContent.includes(sammel.titel))
+    .querySelector(".cb-gruppe-kopf");
+  klick(sammelKopf.querySelector(".cb-plus"));
+  await warte();
+  pruefe(
+    /\nart: sofortmassnahme\n/.test(angelegt[angelegt.length - 1].inhalt),
+    "wer dort anlegt, bekommt art: sofortmassnahme"
+  );
 
   console.log("\nKommentare");
   pruefe(
@@ -328,7 +434,10 @@ const pruefe = (bedingung, beschreibung) => {
   console.log("\nAufgabe anlegen");
   klick(el().querySelectorAll(".cb-tab")[0]);
   await warte();
-  const gruppenkopf = el().querySelector(".cb-gruppe-kopf");
+  const gruppenkopf = el()
+    .querySelectorAll(".cb-gruppe")
+    .find((g) => !g.classList.contains("cb-gruppe-hervor"))
+    .querySelector(".cb-gruppe-kopf");
   const gruppenPlus = gruppenkopf.querySelector(".cb-plus");
   pruefe(gruppenPlus !== null, "jede Themengruppe hat ein +");
   pruefe(gruppenPlus.getAttribute("title") !== null, "das + erklärt sich per Tooltip");
@@ -340,7 +449,10 @@ const pruefe = (bedingung, beschreibung) => {
   pruefe(angelegt.length === vorher + 1, "eine Notiz wurde angelegt");
 
   const neueAufgabe = angelegt[angelegt.length - 1];
-  pruefe(neueAufgabe.pfad === "Change Board/Aufgaben/Neue Aufgabe.md", `im Aufgabenordner (${neueAufgabe.pfad})`);
+  pruefe(
+    /^Change Board\/Aufgaben\/Neue Aufgabe( \d+)?\.md$/.test(neueAufgabe.pfad),
+    `im Aufgabenordner (${neueAufgabe.pfad})`
+  );
   pruefe(/^---\ntyp: aufgabe\n/.test(neueAufgabe.inhalt), "Frontmatter beginnt mit typ: aufgabe");
   pruefe(/\nstatus: backlog\n/.test(neueAufgabe.inhalt), "Status ist backlog");
   pruefe(/\nart: massnahme\n/.test(neueAufgabe.inhalt), "Art ist massnahme");
@@ -353,10 +465,17 @@ const pruefe = (bedingung, beschreibung) => {
     "und ihr Titel steht gleich zum Umbenennen bereit"
   );
 
-  klick(el().querySelector(".cb-gruppe-kopf .cb-plus"));
+  const vorherPfad = neueAufgabe.pfad;
+  klick(
+    el()
+      .querySelectorAll(".cb-gruppe")
+      .find((g) => !g.classList.contains("cb-gruppe-hervor"))
+      .querySelector(".cb-gruppe-kopf .cb-plus")
+  );
   await warte();
   pruefe(
-    angelegt[angelegt.length - 1].pfad === "Change Board/Aufgaben/Neue Aufgabe 2.md",
+    angelegt[angelegt.length - 1].pfad !== vorherPfad &&
+      /Neue Aufgabe \d+\.md$/.test(angelegt[angelegt.length - 1].pfad),
     `zweite Notiz weicht dem Namen aus (${angelegt[angelegt.length - 1].pfad})`
   );
 

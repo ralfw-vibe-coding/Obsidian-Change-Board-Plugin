@@ -20,6 +20,10 @@ Alles unterhalb einer Überschrift **`# Kommentare`** gilt als Verlauf und ersch
 weder auf der Karte noch im Backlog — dort steht nur eine Marke, dass es Kommentare
 gibt. Durchsuchbar sind sie trotzdem. Neue Aufgaben bringen die Überschrift gleich mit.
 
+Eine Aufgabe mit `art: sofortmassnahme` erscheint im Backlog immer in der
+hervorgehobenen Gruppe, unabhängig von ihrem Thema — das steht dann als Marke auf
+der Karte. So sammelt sich oben, was zuerst drankommt.
+
 ### Aufgabe
 
 ```yaml
@@ -98,6 +102,11 @@ Markdown-Editor — das Board bringt dafür keinen eigenen mit.
 Was schon feststeht, ist vorbelegt: eine Aufgabe aus einer Themengruppe bekommt dieses
 Thema, eine aus einer Board-Spalte deren Status. Ein neuer Leitstern bringt das Gerüst
 aller acht Abschnitte mit, damit klar ist, was hineingehört.
+
+**Suchen** — das Feld in der Filterleiste durchsucht Titel, Beschreibungen und
+Kommentare, und zwar über den Backlog hinaus auch alles, was schon im Board liegt.
+Solche Treffer tragen eine Marke mit ihrer Spalte und lassen sich dort direkt
+verschieben. Gruppen klappen bei aktiver Suche von selbst auf.
 
 **Zuweisen** — Rechtsklick auf eine Zeile oder Karte. Dort stehen die Art zur Wahl
 (die aktuelle ist angehakt) sowie *Thema wählen* und *Leitsterne wählen*; letztere

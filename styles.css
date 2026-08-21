@@ -449,6 +449,13 @@
 }
 .change-board .cb-marke-stern { cursor: pointer; }
 .change-board .cb-marke-kommentar { border-style: dashed; }
+.change-board .cb-marke-thema { font-style: italic; }
+.change-board .cb-marke-status {
+  border-color: var(--cb-farbe);
+  color: var(--cb-farbe);
+  font-weight: 600;
+}
+.change-board .cb-treffer { font-size: 12px; color: var(--text-faint); white-space: nowrap; }
 .change-board .cb-marke-stern:hover { border-color: var(--cb-akzent); color: var(--cb-akzent); }
 .change-board .cb-art-sofort { background: var(--cb-akzent-weich); color: var(--cb-akzent); border-color: transparent; font-weight: 660; }
 .change-board .cb-art-massnahme { background: color-mix(in srgb, var(--color-yellow) 18%, transparent); color: var(--cb-warn); border-color: transparent; font-weight: 600; }

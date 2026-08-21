@@ -109,16 +109,17 @@ class Menu {
   constructor() { this.eintraege = []; }
   addItem(aufbau) {
     const eintrag = {
-      titel: "", icon: "", klick: null,
+      titel: "", icon: "", klick: null, angehakt: false,
       setTitle(t) { this.titel = t; return this; },
       setIcon(i) { this.icon = i; return this; },
+      setChecked(v) { this.angehakt = v; return this; },
       onClick(fn) { this.klick = fn; return this; },
     };
     aufbau(eintrag);
     this.eintraege.push(eintrag);
     return this;
   }
-  addSeparator() { return this; }
+  addSeparator() { this.eintraege.push({ trenner: true }); return this; }
   showAtMouseEvent() { registriert.menues.push(this); return this; }
 }
 

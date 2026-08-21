@@ -57,6 +57,9 @@ const STANDARD_EINSTELLUNGEN = {
   aufgabenOrdner: "Change Board/Aufgaben",
   leitsterneUeberschrift: "Unsere Leitsterne",
   tagesfokus: true,
+  // Board-Notizen werden über das Board gepflegt; das Eigenschaftenfeld im Editor
+  // lädt sonst dazu ein, dieselben Felder zweimal zu setzen.
+  eigenschaftenVerbergen: true,
   // Merkt sich, für welchen Tag welcher Leitstern im Fokus stand und wer im
   // laufenden Durchgang schon dran war.
   fokus: { tag: "", leitstern: null, verbraucht: [] },
@@ -366,9 +369,91 @@ class Datenquelle {
     return this.app.vault.create(pfad, `${kopf}\n\n${gerüst}`);
   }
 
+  /** Ein Frontmatter-Feld setzen; ein leerer Wert entfernt es. */
+  async feldSetzen(datei, feld, wert) {
+    await this.app.fileManager.processFrontMatter(datei, (fm) => {
+      if (wert === null || wert === undefined || wert === "") delete fm[feld];
+      else fm[feld] = wert;
+    });
+  }
+
   /** Notiz in den Papierkorb legen — welchen, entscheidet Obsidians Einstellung. */
   async notizLoeschen(datei) {
     await this.app.fileManager.trashFile(datei);
+  }
+}
+
+/**
+ * Auswahlliste in einem Fenster — je nach Einstellung ein Wert oder mehrere.
+ * Ab einer Handvoll Einträgen kommt ein Suchfeld dazu.
+ */
+class AuswahlModal extends Modal {
+  constructor(app, { titel, eintraege, gewaehlt, mehrfach, beiAuswahl }) {
+    super(app);
+    this.titel = titel;
+    this.eintraege = eintraege;
+    this.gewaehlt = new Set(gewaehlt || []);
+    this.mehrfach = mehrfach === true;
+    this.beiAuswahl = beiAuswahl;
+    this.suche = "";
+  }
+
+  onOpen() {
+    this.titleEl.setText(this.titel);
+    if (this.eintraege.length > 8) {
+      const feld = this.contentEl.createEl("input", { cls: "cb-auswahl-suche", type: "search" });
+      feld.setAttribute("placeholder", "Suchen …");
+      feld.addEventListener("input", () => {
+        this.suche = feld.value.trim().toLowerCase();
+        this.listeZeichnen();
+      });
+    }
+    this.listeEl = this.contentEl.createDiv({ cls: "cb-auswahl-liste" });
+    this.listeZeichnen();
+
+    if (this.mehrfach) {
+      const knoepfe = this.contentEl.createDiv({ cls: "cb-modal-knoepfe" });
+      const abbrechen = knoepfe.createEl("button", { text: "Abbrechen" });
+      abbrechen.addEventListener("click", () => this.close());
+      const uebernehmen = knoepfe.createEl("button", { cls: "mod-cta", text: "Übernehmen" });
+      uebernehmen.addEventListener("click", () => {
+        this.close();
+        void this.beiAuswahl([...this.gewaehlt]);
+      });
+    }
+  }
+
+  listeZeichnen() {
+    this.listeEl.empty();
+    const sichtbar = this.eintraege.filter(
+      (e) => !this.suche || e.beschriftung.toLowerCase().includes(this.suche)
+    );
+    if (sichtbar.length === 0) {
+      this.listeEl.createDiv({ cls: "cb-auswahl-leer", text: "Nichts gefunden." });
+      return;
+    }
+    for (const eintrag of sichtbar) {
+      const aktiv = this.gewaehlt.has(eintrag.schluessel);
+      const zeile = this.listeEl.createEl("button", { cls: "cb-auswahl-eintrag" });
+      zeile.toggleClass("cb-auswahl-aktiv", aktiv);
+      zeile.createSpan({ cls: "cb-auswahl-haken", text: aktiv ? "✓" : "" });
+      zeile.createSpan({ cls: "cb-auswahl-text", text: eintrag.beschriftung });
+      if (eintrag.hinweis) zeile.createSpan({ cls: "cb-auswahl-hinweis", text: eintrag.hinweis });
+      zeile.addEventListener("click", () => {
+        if (this.mehrfach) {
+          if (aktiv) this.gewaehlt.delete(eintrag.schluessel);
+          else this.gewaehlt.add(eintrag.schluessel);
+          this.listeZeichnen();
+        } else {
+          this.close();
+          void this.beiAuswahl(eintrag.schluessel);
+        }
+      });
+    }
+  }
+
+  onClose() {
+    this.contentEl.empty();
   }
 }
 
@@ -840,7 +925,7 @@ class ChangeBoardView extends ItemView {
       mitte.createDiv({ cls: "cb-zeile-problem", text: "Ausgangslage: " + aufgabe.problem });
     }
     this.markierungenZeichnen(mitte.createDiv({ cls: "cb-marken" }), aufgabe);
-    this.kontextmenue(zeile, aufgabe.datei);
+    this.aufgabenMenue(zeile, aufgabe);
 
     const aktionen = zeile.createDiv({ cls: "cb-aktionen" });
     const knopf = (beschriftung, ziel, primaer) => {
@@ -1008,7 +1093,7 @@ class ChangeBoardView extends ItemView {
       this.markdown(aufgabe.beschreibung, karte.createDiv({ cls: "cb-karte-text cb-md" }), aufgabe.datei);
     }
     this.markierungenZeichnen(karte.createDiv({ cls: "cb-marken" }), aufgabe);
-    this.kontextmenue(karte, aufgabe.datei);
+    this.aufgabenMenue(karte, aufgabe);
 
     const fuss = karte.createDiv({ cls: "cb-karte-fuss" });
     const auswahl = fuss.createEl("select", { cls: "cb-verschieben" });
@@ -1072,7 +1157,115 @@ class ChangeBoardView extends ItemView {
     await leaf.openFile(datei, neu ? { eState: { rename: "all" } } : undefined);
   }
 
-  /** Rechtsklick auf Zeile, Karte oder Kachel: öffnen oder löschen. */
+  /**
+   * Rechtsklick auf eine Aufgabe: alles, was sonst nur im Frontmatter stünde —
+   * Art, Thema und Leitsterne — plus öffnen und löschen.
+   */
+  aufgabenMenue(element, aufgabe) {
+    element.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      const menü = new Menu();
+
+      menü.addItem((eintrag) =>
+        eintrag
+          .setTitle("Notiz öffnen")
+          .setIcon("file-text")
+          .onClick(() => void this.notizOeffnen(aufgabe.datei, false))
+      );
+
+      menü.addSeparator();
+      for (const art of ALLE_ARTEN) {
+        const def = ARTEN[art];
+        menü.addItem((eintrag) =>
+          eintrag
+            .setTitle(`${def.icon} ${def.label}`)
+            .setChecked(aufgabe.art === art)
+            .onClick(() => void this.feldSetzen(aufgabe, "art", art))
+        );
+      }
+
+      menü.addSeparator();
+      menü.addItem((eintrag) =>
+        eintrag
+          .setTitle("Thema wählen …")
+          .setIcon("folder")
+          .onClick(() => this.themaWaehlen(aufgabe))
+      );
+      menü.addItem((eintrag) =>
+        eintrag
+          .setTitle("Leitsterne wählen …")
+          .setIcon("star")
+          .onClick(() => this.leitsterneWaehlen(aufgabe))
+      );
+
+      menü.addSeparator();
+      menü.addItem((eintrag) =>
+        eintrag
+          .setTitle("Notiz löschen")
+          .setIcon("trash")
+          .onClick(() => this.loeschenFragen(aufgabe.datei))
+      );
+
+      menü.showAtMouseEvent(e);
+    });
+  }
+
+  themaWaehlen(aufgabe) {
+    const aktuell = this.themaVon(aufgabe);
+    new AuswahlModal(this.app, {
+      titel: "Thema wählen",
+      mehrfach: false,
+      gewaehlt: aktuell ? [aktuell.titel] : ["cb-ohne"],
+      eintraege: [{ schluessel: "cb-ohne", beschriftung: "Ohne Thema" }].concat(
+        this.daten.themen.map((t) => ({
+          schluessel: t.titel,
+          beschriftung: t.titel,
+          hinweis: t.kennzeichen,
+        }))
+      ),
+      beiAuswahl: (titel) =>
+        this.feldSetzen(aufgabe, "thema", titel === "cb-ohne" ? null : `[[${titel}]]`),
+    }).open();
+  }
+
+  leitsterneWaehlen(aufgabe) {
+    new AuswahlModal(this.app, {
+      titel: "Leitsterne wählen",
+      mehrfach: true,
+      gewaehlt: this.leitsterneVon(aufgabe).map((l) => l.titel),
+      eintraege: this.daten.leitsterne.map((l) => ({
+        schluessel: l.titel,
+        beschriftung: l.titel,
+        hinweis: `L${l.nummer} ${l.kurzname}`,
+      })),
+      beiAuswahl: (titel) =>
+        this.feldSetzen(aufgabe, "leitsterne", titel.map((t) => `[[${t}]]`)),
+    }).open();
+  }
+
+  /** Feld schreiben und die Ansicht sofort nachziehen. */
+  async feldSetzen(aufgabe, feld, wert) {
+    try {
+      await this.quelle.feldSetzen(aufgabe.datei, feld, wert);
+      await this.datenLaden();
+    } catch (fehler) {
+      new Notice("Änderung konnte nicht gespeichert werden: " + fehler.message);
+    }
+  }
+
+  loeschenFragen(datei, hinweisGeber) {
+    const hinweis = hinweisGeber ? hinweisGeber() : "";
+    new LoeschModal(this.app, datei.basename, hinweis, async () => {
+      try {
+        await this.quelle.notizLoeschen(datei);
+        new Notice(`„${datei.basename}“ in den Papierkorb verschoben.`);
+      } catch (fehler) {
+        new Notice("Löschen fehlgeschlagen: " + fehler.message);
+      }
+    }).open();
+  }
+
+  /** Rechtsklick auf eine Leitstern-Kachel: öffnen oder löschen. */
   kontextmenue(element, datei, hinweisGeber) {
     element.addEventListener("contextmenu", (e) => {
       e.preventDefault();
@@ -1087,17 +1280,7 @@ class ChangeBoardView extends ItemView {
         eintrag
           .setTitle("Notiz löschen")
           .setIcon("trash")
-          .onClick(() => {
-            const hinweis = hinweisGeber ? hinweisGeber() : "";
-            new LoeschModal(this.app, datei.basename, hinweis, async () => {
-              try {
-                await this.quelle.notizLoeschen(datei);
-                new Notice(`„${datei.basename}“ in den Papierkorb verschoben.`);
-              } catch (fehler) {
-                new Notice("Löschen fehlgeschlagen: " + fehler.message);
-              }
-            }).open();
-          })
+          .onClick(() => this.loeschenFragen(datei, hinweisGeber))
       );
       menü.showAtMouseEvent(e);
     });
@@ -1179,6 +1362,21 @@ class ChangeBoardEinstellungenTab extends PluginSettingTab {
     );
 
     new Setting(containerEl)
+      .setName("Eigenschaften in Board-Notizen verbergen")
+      .setDesc(
+        "Blendet das Eigenschaftenfeld im Editor aus, solange eine Notiz aus den " +
+          "Board-Ordnern offen ist. Status, Art, Thema und Leitsterne werden über das " +
+          "Board gesetzt; die Notiz bleibt für Titel und Beschreibung."
+      )
+      .addToggle((t) =>
+        t.setValue(this.plugin.einstellungen.eigenschaftenVerbergen).onChange(async (wert) => {
+          this.plugin.einstellungen.eigenschaftenVerbergen = wert;
+          await this.plugin.einstellungenSpeichern();
+          this.plugin.notizenMarkieren();
+        })
+      );
+
+    new Setting(containerEl)
       .setName("Tagesfokus")
       .setDesc(
         "Hebt jeden Tag einen anderen Leitstern hervor. Jeder kommt einmal an die Reihe, " +
@@ -1215,6 +1413,10 @@ class ChangeBoardPlugin extends Plugin {
 
     this.addSettingTab(new ChangeBoardEinstellungenTab(this.app, this));
 
+    this.registerEvent(this.app.workspace.on("file-open", () => this.notizenMarkieren()));
+    this.registerEvent(this.app.workspace.on("layout-change", () => this.notizenMarkieren()));
+    this.app.workspace.onLayoutReady(() => this.notizenMarkieren());
+
     // Änderungen an Board-Notizen schlagen unmittelbar auf die geöffneten Ansichten durch.
     this.registerEvent(
       this.app.metadataCache.on("changed", (datei) => {
@@ -1241,7 +1443,24 @@ class ChangeBoardPlugin extends Plugin {
   }
 
   onunload() {
-    // Obsidian räumt registrierte Views und Events selbst ab.
+    // Obsidian räumt registrierte Views und Events selbst ab; die Markierung an
+    // fremden Ansichten muss dagegen von Hand verschwinden.
+    for (const blatt of this.app.workspace.getLeavesOfType("markdown")) {
+      blatt.view.containerEl.removeClass("cb-notiz");
+    }
+  }
+
+  /**
+   * Markiert die Editor-Ansichten von Board-Notizen. Das Stylesheet blendet darin
+   * das Eigenschaftenfeld aus — gepflegt werden diese Felder über das Board.
+   */
+  notizenMarkieren() {
+    const verbergen = this.einstellungen.eigenschaftenVerbergen;
+    for (const blatt of this.app.workspace.getLeavesOfType("markdown")) {
+      const datei = blatt.view && blatt.view.file;
+      const gehoertDazu = !!datei && this.quelle.betrifftBoard(datei.path);
+      blatt.view.containerEl.toggleClass("cb-notiz", verbergen && gehoertDazu);
+    }
   }
 
   async boardOeffnen() {

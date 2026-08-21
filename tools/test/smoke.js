@@ -32,21 +32,47 @@ const pruefe = (bedingung, beschreibung) => {
   pruefe(view.getIcon() === ribbon.icon, "die Ansicht benutzt dasselbe Symbol");
 
   console.log("\nStruktur");
-  pruefe(el().querySelectorAll(".cb-stern").length === 5, "fünf Leitstern-Kacheln");
+  pruefe(
+    el().querySelectorAll(".cb-stern").length === view.daten.leitsterne.length,
+    `eine Kachel je Leitstern (${view.daten.leitsterne.length})`
+  );
   pruefe(el().querySelectorAll(".cb-tab").length === 2, "zwei Tabs");
   pruefe(el().querySelector(".cb-filter") !== null, "Filterleiste vorhanden");
 
+  // Die Erwartungen kommen aus den geladenen Notizen, nicht aus festen Zahlen —
+  // sonst schlägt der Test fehl, sobald jemand im Vault gearbeitet hat.
+  const alle = view.daten.aufgaben;
+  const mitStatus = (st) => alle.filter((a) => a.status === st).length;
+  const imBacklog = mitStatus("backlog");
+
   const tabZahlen = zahlen(".cb-tab-zahl");
-  pruefe(tabZahlen[0] === 152, `Backlog zählt 152 Aufgaben (ist: ${tabZahlen[0]})`);
-  pruefe(tabZahlen[1] === 32, `Umsetzung zählt 32 Aufgaben (ist: ${tabZahlen[1]})`);
-  pruefe(el().querySelectorAll(".cb-gruppe").length === 24, "24 Themengruppen mit offenen Aufgaben");
+  pruefe(tabZahlen[0] === imBacklog, `Backlog zählt die offenen Aufgaben (${tabZahlen[0]} von ${alle.length})`);
+  pruefe(tabZahlen[0] + tabZahlen[1] === alle.length, "Backlog und Umsetzung ergeben zusammen alle Aufgaben");
+
+  const themenMitOffenen = new Set(
+    alle.filter((a) => a.status === "backlog").map((a) => {
+      const t = view.themaVon(a);
+      return t ? t.datei.path : "ohne";
+    })
+  );
+  pruefe(
+    el().querySelectorAll(".cb-gruppe").length === themenMitOffenen.size,
+    `eine Gruppe je Thema mit offenen Aufgaben (${themenMitOffenen.size})`
+  );
   pruefe(el().querySelector(".cb-gruppe-hervor") !== null, "Sofortmaßnahmen sind hervorgehoben");
   pruefe(el().querySelector(".cb-gruppe-hervor .cb-zeile") !== null, "und beim ersten Öffnen aufgeklappt");
 
   const artZahlen = zahlen(".cb-chip-zahl");
+  const erwarteteArten = ["sofortmassnahme", "massnahme", "ungeloest"].map(
+    (art) => alle.filter((a) => a.status === "backlog" && a.art === art).length
+  );
   pruefe(
-    artZahlen[0] === 9 && artZahlen[1] === 68 && artZahlen[2] === 75,
-    `Artenzähler 9 / 68 / 75 (ist: ${artZahlen.join(" / ")})`
+    artZahlen.join("/") === erwarteteArten.join("/"),
+    `Artenzähler stimmen (${artZahlen.join(" / ")})`
+  );
+  pruefe(
+    erwarteteArten.reduce((s, n) => s + n, 0) === imBacklog,
+    "und ergeben zusammen den Backlog"
   );
 
   console.log("\nLeitstern-Detail");
@@ -71,7 +97,10 @@ const pruefe = (bedingung, beschreibung) => {
   pruefe(zuruecksetzen !== undefined, "Zurücksetzen erscheint bei aktivem Filter");
   klick(zuruecksetzen);
   await warte();
-  pruefe(el().querySelectorAll(".cb-gruppe").length === 24, "nach Zurücksetzen wieder alle Gruppen");
+  pruefe(
+    el().querySelectorAll(".cb-gruppe").length === themenMitOffenen.size,
+    "nach Zurücksetzen wieder alle Gruppen"
+  );
 
   const sternMarke = el().querySelector(".cb-marke-stern");
   const sternText = sternMarke.textContent;
@@ -90,7 +119,10 @@ const pruefe = (bedingung, beschreibung) => {
   pruefe(geschrieben.length === 1, "genau ein Frontmatter-Schreibvorgang");
   pruefe(geschrieben[0].fm.status === "vereinbart", `Status ist "vereinbart" (ist: ${geschrieben[0].fm.status})`);
   const nachher = zahlen(".cb-tab-zahl");
-  pruefe(nachher[0] === 151 && nachher[1] === 33, `Zähler wandern mit (${nachher.join(" / ")})`);
+  pruefe(
+    nachher[0] === tabZahlen[0] - 1 && nachher[1] === tabZahlen[1] + 1,
+    `Zähler wandern mit (${tabZahlen.join(" / ")} → ${nachher.join(" / ")})`
+  );
   pruefe(!el().querySelector(".cb-zeile").textContent.includes(titelVorher), "Karte verlässt das Backlog");
 
   console.log("\nBoard");
@@ -98,8 +130,12 @@ const pruefe = (bedingung, beschreibung) => {
   await warte();
   pruefe(el().querySelectorAll(".cb-spalte").length === 5, "fünf Spalten");
   const spaltenZahlen = zahlen(".cb-spalte-zahl");
-  pruefe(spaltenZahlen[0] === 1, `"Vereinbart" enthält die verschobene Karte (${spaltenZahlen[0]})`);
-  pruefe(spaltenZahlen[3] === 32, `"Fertig" enthält die 32 erledigten Punkte (${spaltenZahlen[3]})`);
+  const erwarteteSpalten = ["vereinbart", "angefangen", "blockiert", "fertig", "verworfen"].map(mitStatus);
+  pruefe(
+    spaltenZahlen.join("/") === erwarteteSpalten.join("/"),
+    `jede Spalte zeigt ihren Bestand (${spaltenZahlen.join(" / ")})`
+  );
+  pruefe(spaltenZahlen[0] >= 1, "die eben verschobene Karte liegt in „Vereinbart“");
   pruefe(el().querySelector(".cb-karte") !== null, "Karten werden gezeichnet");
 
   const auswahl = el().querySelector(".cb-verschieben");
@@ -240,6 +276,74 @@ const pruefe = (bedingung, beschreibung) => {
   );
   pruefe(neuerStern.inhalt.includes("## Aufgelöst, wenn"), "einschließlich „Aufgelöst, wenn“");
 
+  console.log("\nArt, Thema und Leitsterne zuweisen");
+  registriert.menues.length = 0;
+  registriert.modale.length = 0;
+  klick(el().querySelectorAll(".cb-tab")[0]);   // zurück in den Backlog
+  await warte();
+  const zuweisZeile = el().querySelector(".cb-zeile");
+  const zuweisTitel = zuweisZeile.querySelector(".cb-titel-link").textContent;
+  ereignisSenden(zuweisZeile, "contextmenu");
+  const zMenü = registriert.menues[0];
+  const zEintrag = (titel) => zMenü.eintraege.find((e) => e.titel === titel);
+
+  pruefe(zMenü.eintraege.filter((e) => e.trenner).length === 3, "das Menü ist in Blöcke geteilt");
+  const arten = zMenü.eintraege.filter((e) => /Sofortmaßnahme|Maßnahme|Ungelöst/.test(e.titel || ""));
+  pruefe(arten.length === 3, "alle drei Arten stehen zur Wahl");
+  pruefe(arten.filter((e) => e.angehakt).length === 1, "die aktuelle Art ist angehakt");
+
+  const vorherGeschrieben = geschrieben.length;
+  zEintrag("● Ungelöst").klick();
+  await warte(60);
+  pruefe(geschrieben.length === vorherGeschrieben + 1, "die Wahl schreibt ins Frontmatter");
+  pruefe(geschrieben[geschrieben.length - 1].fm.art === "ungeloest", "art steht auf ungeloest");
+  pruefe(
+    el().textContent.includes("● Ungelöst"),
+    "und die Ansicht zeigt es sofort"
+  );
+
+  pruefe(zEintrag("Thema wählen …") !== undefined, "„Thema wählen“ steht im Menü");
+  zEintrag("Thema wählen …").klick();
+  const themaModal = registriert.modale[registriert.modale.length - 1];
+  pruefe(themaModal.contentEl.querySelector(".cb-auswahl-suche") !== null, "bei vielen Themen gibt es ein Suchfeld");
+  const themaEintraege = themaModal.contentEl.querySelectorAll(".cb-auswahl-eintrag");
+  pruefe(
+    themaEintraege.length === view.daten.themen.length + 1,
+    `„Ohne Thema“ plus alle Themen (${themaEintraege.length})`
+  );
+  pruefe(
+    themaModal.contentEl.querySelectorAll(".cb-auswahl-aktiv").length === 1,
+    "das aktuelle Thema ist markiert"
+  );
+  klick(themaEintraege.find((e) => e.textContent.includes("IT-Infrastruktur")));
+  await warte(60);
+  pruefe(
+    geschrieben[geschrieben.length - 1].fm.thema === "[[IT-Infrastruktur & Backup]]",
+    `Thema wird als Wikilink gesetzt (${geschrieben[geschrieben.length - 1].fm.thema})`
+  );
+
+  registriert.menues.length = 0;
+  ereignisSenden(el().querySelectorAll(".cb-zeile").find((z) => z.textContent.includes(zuweisTitel)) || el().querySelector(".cb-zeile"), "contextmenu");
+  registriert.menues[0].eintraege.find((e) => e.titel === "Leitsterne wählen …").klick();
+  const sternAuswahl = registriert.modale[registriert.modale.length - 1];
+  const sternZeilen = sternAuswahl.contentEl.querySelectorAll(".cb-auswahl-eintrag");
+  pruefe(
+    sternZeilen.length === view.daten.leitsterne.length,
+    `alle Leitsterne stehen zur Wahl (${sternZeilen.length})`
+  );
+  const vorherAktiv = sternAuswahl.contentEl.querySelectorAll(".cb-auswahl-aktiv").length;
+  klick(sternZeilen[0]);
+  const nachherAktiv = sternAuswahl.contentEl.querySelectorAll(".cb-auswahl-aktiv").length;
+  pruefe(nachherAktiv !== vorherAktiv, "ein Klick schaltet die Auswahl um, ohne zu schließen");
+  klick(sternAuswahl.contentEl.querySelectorAll("button").find((b) => b.textContent === "Übernehmen"));
+  await warte(60);
+  const gesetzt = geschrieben[geschrieben.length - 1].fm.leitsterne;
+  pruefe(Array.isArray(gesetzt), "Leitsterne werden als Liste geschrieben");
+  pruefe(
+    gesetzt.every((w) => /^\[\[.+\]\]$/.test(w)),
+    `als Wikilinks (${JSON.stringify(gesetzt)})`
+  );
+
   console.log("\nLöschen");
   registriert.menues.length = 0;
   registriert.modale.length = 0;
@@ -249,13 +353,12 @@ const pruefe = (bedingung, beschreibung) => {
   const menüEreignis = ereignisSenden(zeile, "contextmenu");
   pruefe(menüEreignis.defaultPrevented, "Rechtsklick unterdrückt das Standardmenü");
   const menü = registriert.menues[0];
-  pruefe(menü !== undefined && menü.eintraege.length === 2, "Kontextmenü mit zwei Einträgen");
-  pruefe(
-    menü.eintraege.map((e) => e.titel).join(" | ") === "Notiz öffnen | Notiz löschen",
-    'die Einträge heißen „Notiz öffnen“ und „Notiz löschen“'
-  );
+  const eintrag = (m, titel) => m.eintraege.find((e) => e.titel === titel);
+  pruefe(menü !== undefined, "Rechtsklick öffnet ein Menü");
+  pruefe(eintrag(menü, "Notiz öffnen") !== undefined, "mit „Notiz öffnen“");
+  pruefe(eintrag(menü, "Notiz löschen") !== undefined, "und „Notiz löschen“");
 
-  menü.eintraege[1].klick();
+  eintrag(menü, "Notiz löschen").klick();
   const modal = registriert.modale[0];
   pruefe(modal !== undefined, "Löschen fragt erst nach");
   pruefe(modal.contentEl.textContent.includes("Papierkorb"), "die Rückfrage nennt den Papierkorb");
@@ -265,7 +368,7 @@ const pruefe = (bedingung, beschreibung) => {
   await warte();
   pruefe(geloescht.length === 0, "Abbrechen löscht nichts");
 
-  menü.eintraege[1].klick();
+  eintrag(menü, "Notiz löschen").klick();
   const modal2 = registriert.modale[registriert.modale.length - 1];
   klick(modal2.contentEl.querySelectorAll("button").find((b) => b.textContent === "Löschen"));
   await warte();
@@ -277,7 +380,7 @@ const pruefe = (bedingung, beschreibung) => {
 
   registriert.menues.length = 0;
   ereignisSenden(el().querySelector(".cb-stern"), "contextmenu");
-  registriert.menues[0].eintraege[1].klick();
+  registriert.menues[0].eintraege.find((e) => e.titel === "Notiz löschen").klick();
   const sternModal = registriert.modale[registriert.modale.length - 1];
   pruefe(
     /\d+ Aufgaben verweisen darauf/.test(sternModal.contentEl.textContent),

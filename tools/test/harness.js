@@ -42,11 +42,14 @@ async function boardAufbauen() {
     metadataCache,
     fileManager,
     workspace: {
-      getLeavesOfType: () => blaetter,
+      getLeavesOfType: (typ) => (typ === "markdown" ? markdownBlaetter : blaetter),
       getLeaf: () => blatt,
       revealLeaf: () => {},
+      on: () => ({}),
+      onLayoutReady: (fn) => fn(),
     },
   };
+  const markdownBlaetter = [];
   // openFile gehört wie in Obsidian ans Blatt, nicht an den Workspace.
   const blatt = {
     app,

@@ -89,7 +89,45 @@
 .change-board .cb-leer .cb-plus { opacity: 1; }
 .change-board .cb-leer button { margin-top: 12px; }
 
+/* Board-Notizen: das Eigenschaftenfeld im Editor ausblenden. Die Felder werden
+   über das Board gesetzt; im Quelltextmodus bleibt das Frontmatter sichtbar. */
+.cb-notiz .markdown-source-view .metadata-container,
+.cb-notiz .markdown-reading-view .metadata-container { display: none; }
+
 .cb-modal-hinweis { color: var(--text-muted); font-size: 13px; }
+.cb-auswahl-suche {
+  width: 100%;
+  margin-bottom: 10px;
+  padding: 7px 11px;
+  font-size: 13px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  background: var(--background-secondary);
+  color: var(--text-normal);
+}
+.cb-auswahl-liste { max-height: 45vh; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.cb-auswahl-eintrag {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-s);
+  box-shadow: none;
+  color: var(--text-normal);
+  font-size: 13.5px;
+  height: auto;
+  padding: 6px 9px;
+  cursor: pointer;
+}
+.cb-auswahl-eintrag:hover { background: var(--background-modifier-hover); }
+.cb-auswahl-aktiv { background: color-mix(in srgb, var(--interactive-accent) 12%, transparent); }
+.cb-auswahl-haken { width: 14px; flex: none; color: var(--interactive-accent); font-weight: 700; }
+.cb-auswahl-text { flex: 1; }
+.cb-auswahl-hinweis { font-size: 11px; color: var(--text-faint); white-space: nowrap; }
+.cb-auswahl-leer { padding: 16px; text-align: center; color: var(--text-faint); font-size: 13px; }
 .cb-modal-knoepfe { display: flex; gap: 8px; justify-content: flex-end; margin-top: 18px; }
 
 /* ------------------------------------------------------------------- Zoom */

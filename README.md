@@ -55,8 +55,9 @@ badge: zuerst anpacken         # optional
 ### Thema
 
 Frontmatter: `id`, `reihenfolge`, `kennzeichen` (Kürzel im Gruppenkopf) und optional
-`kritisch`, `hervorgehoben`, `badge`. Themen legt man von Hand an — dafür gibt es
-im Board bislang kein `+`.
+`kritisch`, `hervorgehoben`, `badge`. Themen-Notizen legt man von Hand an — dafür
+gibt es im Board bislang kein `+`; zuweisen lassen sie sich dann über das
+Kontextmenü einer Aufgabe.
 
 ### Leitstern
 
@@ -90,9 +91,20 @@ Was schon feststeht, ist vorbelegt: eine Aufgabe aus einer Themengruppe bekommt 
 Thema, eine aus einer Board-Spalte deren Status. Ein neuer Leitstern bringt das Gerüst
 aller acht Abschnitte mit, damit klar ist, was hineingehört.
 
-**Löschen** — Rechtsklick auf eine Zeile, eine Karte oder eine Leitstern-Kachel. Nach
+**Zuweisen** — Rechtsklick auf eine Zeile oder Karte. Dort stehen die Art zur Wahl
+(die aktuelle ist angehakt) sowie *Thema wählen* und *Leitsterne wählen*; letztere
+öffnen eine Liste, bei vielen Einträgen mit Suchfeld. Leitsterne lassen sich mehrfach
+wählen. Geschrieben wird direkt ins Frontmatter der Notiz.
+
+**Löschen** — ebenfalls über das Kontextmenü, auch an der Leitstern-Kachel. Nach
 einer Rückfrage wandert die Notiz in den Papierkorb, den Obsidian eingestellt hat.
 Beim Leitstern nennt die Rückfrage, wie viele Aufgaben auf ihn verweisen.
+
+**Eigenschaften im Editor** — solange eine Notiz aus den Board-Ordnern offen ist,
+blendet das Plugin das Eigenschaftenfeld aus: Status, Art, Thema und Leitsterne
+gehören ins Board, die Notiz bleibt für Titel und Beschreibung. Abschaltbar in den
+Einstellungen; im Quelltextmodus ist das Frontmatter weiterhin sichtbar. Ein echtes
+Schreibschutz-Flag für Properties kennt Obsidian nicht.
 
 **Zoom** — oben rechts, `[− 100 % +]` in Zehnerschritten zwischen 50 % und 200 %.
 Ein Klick auf den Wert setzt auf 100 % zurück. Die Stufe gilt pro Vault, nicht pro Notiz.

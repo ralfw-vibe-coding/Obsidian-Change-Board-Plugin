@@ -60,6 +60,8 @@ const STANDARD_EINSTELLUNGEN = {
   // Board-Notizen werden über das Board gepflegt; das Eigenschaftenfeld im Editor
   // lädt sonst dazu ein, dieselben Felder zweimal zu setzen.
   eigenschaftenVerbergen: true,
+  // Wie viele Karten eine Spalte zeigt, bevor der Rest hinter einem Knopf bleibt.
+  kartenProSpalte: 10,
   // Merkt sich, für welchen Tag welcher Leitstern im Fokus stand und wer im
   // laufenden Durchgang schon dran war.
   fokus: { tag: "", leitstern: null, verbraucht: [] },
@@ -73,6 +75,8 @@ const STANDARD_EINSTELLUNGEN = {
     themenInitialisiert: false,
     offenerLeitstern: null,
     zoom: 100,
+    zugeklappteSpalten: [],
+    vollstaendigeSpalten: [],
   },
 };
 
@@ -84,6 +88,23 @@ const BOARD_ICON =
   '<rect x="68" y="14" width="22" height="30" rx="4" fill="none" stroke="currentColor" stroke-width="8"/>';
 
 /* ================================================================== Hilfsfunktionen */
+
+/** Überschrift, ab der eine Notiz Kommentare führt statt Beschreibung. */
+const KOMMENTAR_UEBERSCHRIFT = "Kommentare";
+const KOMMENTAR_MUSTER = new RegExp(`^#{1,6}\\s+${KOMMENTAR_UEBERSCHRIFT}\\s*$`, "m");
+
+/**
+ * Trennt den Notiztext an der Kommentar-Überschrift. Angezeigt wird nur, was davor
+ * steht; darunter darf beliebig viel Verlauf stehen, ohne die Karte zu überfrachten.
+ */
+function textTeilen(inhalt) {
+  const treffer = KOMMENTAR_MUSTER.exec(inhalt);
+  if (!treffer) return { beschreibung: inhalt.trim(), kommentare: "" };
+  return {
+    beschreibung: inhalt.slice(0, treffer.index).trim(),
+    kommentare: inhalt.slice(treffer.index + treffer[0].length).trim(),
+  };
+}
 
 /** Frontmatter abschneiden, den reinen Notiztext zurückgeben. */
 function körper(inhalt) {
@@ -284,13 +305,15 @@ class Datenquelle {
       if (text(fm.typ) && text(fm.typ) !== "aufgabe") continue;
       const status = text(fm.status).toLowerCase();
       const art = text(fm.art).toLowerCase();
+      const geteilt = textTeilen(körper(await this.app.vault.cachedRead(datei)));
       aufgaben.push({
         datei,
         titel: datei.basename,
         id: text(fm.id) || datei.path,
         status: ALLE_STATUS.includes(status) ? status : "backlog",
         art: ALLE_ARTEN.includes(art) ? art : "massnahme",
-        beschreibung: körper(await this.app.vault.cachedRead(datei)),
+        beschreibung: geteilt.beschreibung,
+        kommentare: geteilt.kommentare,
         reihenfolge: zahl(fm.reihenfolge, aufgaben.length),
         themaLink: linkziel(fm.thema) || null,
         leitsternLinks: linkliste(fm.leitsterne),
@@ -351,7 +374,7 @@ class Datenquelle {
       leitsterne: null,
       reihenfolge: typeof reihenfolge === "number" ? reihenfolge : 0,
     });
-    return this.app.vault.create(pfad, `${kopf}\n\n`);
+    return this.app.vault.create(pfad, `${kopf}\n\n\n\n# ${KOMMENTAR_UEBERSCHRIFT}\n\n`);
   }
 
   /** Legt eine Leitstern-Notiz samt Abschnittsgerüst an. */
@@ -614,7 +637,8 @@ class ChangeBoardView extends ItemView {
     }
     if (a.suche) {
       const thema = this.themaVon(aufgabe);
-      const heu = [aufgabe.titel, aufgabe.beschreibung, aufgabe.problem, thema ? thema.titel : ""]
+      // Kommentare werden nicht angezeigt, sind aber durchsuchbar.
+      const heu = [aufgabe.titel, aufgabe.beschreibung, aufgabe.kommentare, aufgabe.problem, thema ? thema.titel : ""]
         .join(" ")
         .toLowerCase();
       if (!heu.includes(a.suche.toLowerCase())) return false;
@@ -954,6 +978,11 @@ class ChangeBoardView extends ItemView {
   markierungenZeichnen(eltern, aufgabe) {
     const art = ARTEN[aufgabe.art];
     eltern.createSpan({ cls: `cb-marke ${art.klasse}`, text: `${art.icon} ${art.label}` });
+    if (aufgabe.kommentare) {
+      // Der Inhalt bleibt in der Notiz; hier steht nur, dass es welchen gibt.
+      const marke = eltern.createSpan({ cls: "cb-marke cb-marke-kommentar", text: "Kommentare" });
+      marke.setAttribute("title", "Diese Aufgabe hat Kommentare — in der Notiz nachlesen");
+    }
     for (const stern of this.leitsterneVon(aufgabe)) {
       const marke = eltern.createSpan({
         cls: "cb-marke cb-marke-stern",
@@ -1045,21 +1074,37 @@ class ChangeBoardView extends ItemView {
   boardZeichnen() {
     const panel = this.wurzel.createDiv({ cls: "cb-panel" });
     const board = panel.createDiv({ cls: "cb-board" });
-    board.style.setProperty("--cb-spalten", String(SPALTEN.length));
 
     for (const spalte of SPALTEN) {
       const aufgaben = this.daten.aufgaben
         .filter((a) => a.status === spalte.key)
         .sort((a, b) => a.reihenfolge - b.reihenfolge);
+      const zu = this.ansicht.zugeklappteSpalten.includes(spalte.key);
 
       const el = board.createDiv({ cls: "cb-spalte" });
       el.style.setProperty("--cb-farbe", spalte.farbe);
+      el.toggleClass("cb-spalte-zu", zu);
 
       const kopf = el.createDiv({ cls: "cb-spalte-kopf" });
       const titel = kopf.createDiv({ cls: "cb-spalte-titel" });
+
+      const chevron = titel.createEl("button", { cls: "cb-chevron", text: zu ? "›" : "⌄" });
+      chevron.setAttribute("aria-expanded", String(!zu));
+      chevron.setAttribute("aria-label", zu ? `„${spalte.name}“ aufklappen` : `„${spalte.name}“ zuklappen`);
+      chevron.setAttribute("title", chevron.getAttribute("aria-label"));
+      chevron.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        umschalten(this.ansicht.zugeklappteSpalten, spalte.key);
+        await this.ansichtSpeichern();
+        this.zeichnen();
+      });
+
       titel.createSpan({ cls: "cb-spalte-icon", text: spalte.icon });
-      titel.createSpan({ text: spalte.name });
+      titel.createSpan({ cls: "cb-spalte-name", text: spalte.name });
       titel.createSpan({ cls: "cb-spalte-zahl", text: String(aufgaben.length) });
+
+      if (zu) continue;   // zugeklappt bleibt nur der Kopf stehen
+
       kopf.createDiv({ cls: "cb-spalte-unter", text: spalte.untertitel });
       this.plusKnopf(titel, `Aufgabe in „${spalte.name}“ anlegen`, () =>
         this.aufgabeAnlegen(null, spalte.key)
@@ -1070,7 +1115,24 @@ class ChangeBoardView extends ItemView {
         koerper.createDiv({ cls: "cb-spalte-leer", text: "leer" });
         continue;
       }
-      for (const aufgabe of aufgaben) this.karteZeichnen(koerper, aufgabe, spalte.key);
+
+      const grenze = Math.max(1, zahl(this.plugin.einstellungen.kartenProSpalte, 10));
+      const vollstaendig = this.ansicht.vollstaendigeSpalten.includes(spalte.key);
+      const sichtbar = vollstaendig ? aufgaben : aufgaben.slice(0, grenze);
+      for (const aufgabe of sichtbar) this.karteZeichnen(koerper, aufgabe, spalte.key);
+
+      const verborgen = aufgaben.length - sichtbar.length;
+      if (verborgen > 0 || vollstaendig) {
+        const mehr = koerper.createEl("button", {
+          cls: "cb-mehr",
+          text: verborgen > 0 ? `${verborgen} weitere zeigen` : "weniger zeigen",
+        });
+        mehr.addEventListener("click", async () => {
+          umschalten(this.ansicht.vollstaendigeSpalten, spalte.key);
+          await this.ansichtSpeichern();
+          this.zeichnen();
+        });
+      }
     }
 
     const hinweis = panel.createDiv({ cls: "cb-hinweis" });
@@ -1362,6 +1424,21 @@ class ChangeBoardEinstellungenTab extends PluginSettingTab {
     );
 
     new Setting(containerEl)
+      .setName("Karten je Spalte")
+      .setDesc("Wie viele Karten eine Board-Spalte zeigt, bevor der Rest hinter einem Knopf bleibt.")
+      .addText((t) =>
+        t
+          .setPlaceholder("10")
+          .setValue(String(this.plugin.einstellungen.kartenProSpalte))
+          .onChange(async (wert) => {
+            const n = Number.parseInt(wert, 10);
+            this.plugin.einstellungen.kartenProSpalte = Number.isFinite(n) && n > 0 ? n : 10;
+            await this.plugin.einstellungenSpeichern();
+            this.plugin.ansichtenAktualisieren();
+          })
+      );
+
+    new Setting(containerEl)
       .setName("Eigenschaften in Board-Notizen verbergen")
       .setDesc(
         "Blendet das Eigenschaftenfeld im Editor aus, solange eine Notiz aus den " +
@@ -1499,5 +1576,5 @@ module.exports.default = ChangeBoardPlugin;
 // Für den Rauchtest, der diese Datei außerhalb von Obsidian lädt.
 module.exports.__test__ = {
   CHANGE_BOARD_VIEW, ChangeBoardView, Datenquelle,
-  körper, linkziel, abschnitte, fokusBestimmen, heutigerTag, ZOOM,
+  körper, linkziel, abschnitte, textTeilen, fokusBestimmen, heutigerTag, ZOOM,
 };

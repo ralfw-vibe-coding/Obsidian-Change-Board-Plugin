@@ -16,6 +16,10 @@ Drei Notizarten, unterschieden über das Frontmatter-Feld `typ`:
 Der Dateiname ist jeweils der Titel. Der Beschreibungstext steht im Notiz-Body, damit
 er sich wie jede andere Notiz schreiben lässt.
 
+Alles unterhalb einer Überschrift **`# Kommentare`** gilt als Verlauf und erscheint
+weder auf der Karte noch im Backlog — dort steht nur eine Marke, dass es Kommentare
+gibt. Durchsuchbar sind sie trotzdem. Neue Aufgaben bringen die Überschrift gleich mit.
+
 ### Aufgabe
 
 ```yaml
@@ -34,6 +38,10 @@ aufwand: …                     # optional
 problem: …                     # optional: die Feststellung, aus der die Aufgabe entstand
 ---
 Beschreibungstext.
+
+# Kommentare
+
+- 21.08. Rückruf vereinbart.
 ```
 
 `status` ist das einzige Feld, das das Board selbst schreibt — beim Verschieben einer Karte.
@@ -105,6 +113,14 @@ blendet das Plugin das Eigenschaftenfeld aus: Status, Art, Thema und Leitsterne
 gehören ins Board, die Notiz bleibt für Titel und Beschreibung. Abschaltbar in den
 Einstellungen; im Quelltextmodus ist das Frontmatter weiterhin sichtbar. Ein echtes
 Schreibschutz-Flag für Properties kennt Obsidian nicht.
+
+**Spalten zuklappen** — das Chevron im Spaltenkopf. Zugeklappt bleibt ein schmaler
+Streifen mit gedrehtem Namen und der Anzahl stehen, sodass mehr Platz für die Spalten
+bleibt, auf die es gerade ankommt. Der Zustand wird gespeichert.
+
+**Lange Spalten** — eine Spalte zeigt höchstens zehn Karten; ein Knopf darunter nennt
+die Zahl der übrigen und blendet sie bei Bedarf ein. Der Zähler im Kopf nennt immer den
+vollen Bestand. Die Grenze lässt sich in den Einstellungen ändern.
 
 **Zoom** — oben rechts, `[− 100 % +]` in Zehnerschritten zwischen 50 % und 200 %.
 Ein Klick auf den Wert setzt auf 100 % zurück. Die Stufe gilt pro Vault, nicht pro Notiz.

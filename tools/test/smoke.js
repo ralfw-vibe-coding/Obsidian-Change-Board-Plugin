@@ -208,6 +208,115 @@ const pruefe = (bedingung, beschreibung) => {
 
   pruefe(intern.heutigerTag(new Date(2026, 7, 3)) === "2026-08-03", "Tagesschlüssel in lokaler Zeit");
 
+  console.log("\nKommentare");
+  pruefe(
+    intern.textTeilen("Beschreibung.\n\n# Kommentare\n\n- erster").beschreibung === "Beschreibung.",
+    "die Beschreibung endet an der Überschrift"
+  );
+  pruefe(
+    intern.textTeilen("Beschreibung.\n\n# Kommentare\n\n- erster").kommentare === "- erster",
+    "was darunter steht, gilt als Kommentar"
+  );
+  pruefe(
+    intern.textTeilen("Nur Beschreibung.").kommentare === "",
+    "ohne Überschrift gibt es keine Kommentare"
+  );
+  pruefe(
+    intern.textTeilen("Text\n\n## Kommentare\n\nx").kommentare === "x",
+    "auch eine zweite Ebene wird erkannt"
+  );
+  pruefe(
+    intern.textTeilen("Text\n\n# Kommentare zur Lage\n\nx").kommentare === "",
+    "eine Überschrift mit Zusatz zählt nicht"
+  );
+
+  // Eine Aufgabe mit Kommentaren zeigt den Inhalt nirgends, ist aber auffindbar.
+  klick(el().querySelectorAll(".cb-tab")[0]);   // in den Backlog
+  await warte();
+  const mitKommentar = view.daten.aufgaben.find((a) => a.status === "backlog");
+  mitKommentar.kommentare = "Rückruf am Freitag vereinbart";
+  view.zeichnen();
+  const alleAufklappen = el().querySelectorAll(".cb-btn").find((b) => b.textContent === "Alle aufklappen");
+  if (alleAufklappen) {
+    klick(alleAufklappen);
+    await warte();
+  }
+  const zeileMitKommentar = el()
+    .querySelectorAll(".cb-zeile")
+    .find((z) => z.textContent.includes(mitKommentar.titel));
+  if (zeileMitKommentar) {
+    pruefe(
+      !zeileMitKommentar.textContent.includes("Rückruf am Freitag"),
+      "der Kommentartext steht nicht auf der Karte"
+    );
+    pruefe(
+      zeileMitKommentar.querySelector(".cb-marke-kommentar") !== null,
+      "eine Marke zeigt aber, dass es Kommentare gibt"
+    );
+  } else {
+    pruefe(false, "Aufgabe mit Kommentar im Backlog gefunden");
+    pruefe(false, "—");
+  }
+  mitKommentar.kommentare = "";
+  view.zeichnen();
+
+  console.log("\nSpalten zuklappen");
+  klick(el().querySelectorAll(".cb-tab")[1]);
+  await warte();
+  const chevrons = () => el().querySelectorAll(".cb-chevron");
+  pruefe(chevrons().length === 5, `jede Spalte hat ein Chevron (${chevrons().length})`);
+  pruefe(el().querySelectorAll(".cb-spalte-zu").length === 0, "anfangs ist keine zugeklappt");
+
+  klick(chevrons()[0]);
+  await warte();
+  pruefe(el().querySelectorAll(".cb-spalte-zu").length === 1, "ein Klick klappt die Spalte zu");
+  const zugeklappt = el().querySelector(".cb-spalte-zu");
+  pruefe(zugeklappt.querySelector(".cb-spalte-koerper") === null, "zugeklappt zeigt sie keine Karten");
+  pruefe(zugeklappt.querySelector(".cb-spalte-name") !== null, "der Name bleibt stehen");
+  pruefe(zugeklappt.querySelector(".cb-spalte-zahl") !== null, "und die Anzahl auch");
+  pruefe(
+    view.plugin.einstellungen.ansicht.zugeklappteSpalten.includes("vereinbart"),
+    "der Zustand wird gespeichert"
+  );
+
+  klick(el().querySelectorAll(".cb-tab")[0]);
+  await warte();
+  klick(el().querySelectorAll(".cb-tab")[1]);
+  await warte();
+  pruefe(el().querySelectorAll(".cb-spalte-zu").length === 1, "und übersteht den Tabwechsel");
+  klick(chevrons()[0]);
+  await warte();
+  pruefe(el().querySelectorAll(".cb-spalte-zu").length === 0, "nochmal klicken klappt wieder auf");
+
+  console.log("\nKarten je Spalte");
+  const grenze = view.plugin.einstellungen.kartenProSpalte;
+  pruefe(grenze === 10, `voreingestellt sind ${grenze} Karten`);
+  const fertigIndex = 3;
+  const fertigAnzahl = view.daten.aufgaben.filter((a) => a.status === "fertig").length;
+  const spalteFertig = () => el().querySelectorAll(".cb-spalte")[fertigIndex];
+  pruefe(fertigAnzahl > grenze, `„Fertig“ hat mehr als ${grenze} Karten (${fertigAnzahl})`);
+  pruefe(
+    spalteFertig().querySelectorAll(".cb-karte").length === grenze,
+    `es werden nur ${grenze} gezeigt (${spalteFertig().querySelectorAll(".cb-karte").length})`
+  );
+  pruefe(
+    spalteFertig().querySelector(".cb-spalte-zahl").textContent === String(fertigAnzahl),
+    "der Zähler nennt weiterhin den vollen Bestand"
+  );
+  const mehr = spalteFertig().querySelector(".cb-mehr");
+  pruefe(mehr !== null && mehr.textContent === `${fertigAnzahl - grenze} weitere zeigen`, `der Knopf sagt, wie viele fehlen (${mehr && mehr.textContent})`);
+
+  klick(mehr);
+  await warte();
+  pruefe(
+    spalteFertig().querySelectorAll(".cb-karte").length === fertigAnzahl,
+    "der Klick zeigt alle"
+  );
+  pruefe(spalteFertig().querySelector(".cb-mehr").textContent === "weniger zeigen", "und lässt sich zurücknehmen");
+  klick(spalteFertig().querySelector(".cb-mehr"));
+  await warte();
+  pruefe(spalteFertig().querySelectorAll(".cb-karte").length === grenze, "wieder auf die Voreinstellung");
+
   console.log("\nVersion");
   const version = el().querySelector(".cb-version");
   pruefe(version !== null, "Version steht in der Kopfzeile");
